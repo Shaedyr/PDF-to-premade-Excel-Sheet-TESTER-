@@ -1,7 +1,6 @@
 import streamlit as st
 import app_modules.input as input_module
 
-
 # Remove sidebar
 st.set_page_config(
     layout="wide",
@@ -17,8 +16,7 @@ hide_sidebar_style = """
 """
 st.markdown(hide_sidebar_style, unsafe_allow_html=True)
 
-
-# Import only the modules you actually use
+# Clean imports
 from app_modules import main_page
 from app_modules import company_data
 from app_modules import pdf_parser
@@ -30,7 +28,7 @@ from app_modules import download
 # Sidebar page mapping
 PAGES = {
     "🏠 Hovedside": main_page,
-    "📄 Input-modul": input_modules,
+    "📄 Input-modul": input_module,
     "🏢 Company Data": company_data,
     "📄 PDF Parser": pdf_parser,
     "📝 Summary Generator": summary,
@@ -40,18 +38,10 @@ PAGES = {
 }
 
 def main():
-    st.set_page_config(page_title="PDF → Excel Automator", layout="wide")
-
     st.sidebar.title("Navigasjon")
     choice = st.sidebar.radio("Velg side:", list(PAGES.keys()))
-
     page = PAGES[choice]
     page.run()
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
