@@ -30,7 +30,7 @@ from app_modules import download
 # Sidebar page mapping
 PAGES = {
     "🏠 Hovedside": main_page,
-    "📄 Input-modul": input,
+    "📄 Input-modul": input_modules,
     "🏢 Company Data": company_data,
     "📄 PDF Parser": pdf_parser,
     "📝 Summary Generator": summary,
@@ -50,6 +50,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
