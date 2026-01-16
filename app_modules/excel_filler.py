@@ -3,15 +3,12 @@ from openpyxl.styles import PatternFill, Alignment
 from io import BytesIO
 from app_modules.cell_mapping import CELL_MAP
 
-
-# Turquoise headline color (skip these cells)
 HEADLINE_COLORS = ["FF0BD7B5", "0BD7B5"]
 
 
 def fill_excel(template_bytes, field_values, summary_text):
     wb = load_workbook(filename=BytesIO(template_bytes))
 
-    # Loop through all sheets defined in CELL_MAP
     for sheet_name, fields in CELL_MAP.items():
         if sheet_name not in wb.sheetnames:
             continue
@@ -23,7 +20,6 @@ def fill_excel(template_bytes, field_values, summary_text):
 
             cell = ws[cell_ref]
 
-            # Skip headline cells (turquoise)
             fill = cell.fill
             if (
                 fill and isinstance(fill, PatternFill)
@@ -34,13 +30,11 @@ def fill_excel(template_bytes, field_values, summary_text):
 
             cell.value = value
 
-    # Insert summary text into first sheet
     first_sheet = wb.sheetnames[0]
     ws_first = wb[first_sheet]
 
     if summary_text:
         placed = False
-
         for row in ws_first.iter_rows():
             for cell in row:
                 if isinstance(cell.value, str) and "skriv her" in cell.value.lower():
@@ -55,7 +49,6 @@ def fill_excel(template_bytes, field_values, summary_text):
             ws_first["A46"] = summary_text
             ws_first["A46"].alignment = Alignment(wrap_text=True, vertical="top")
 
-    # Return updated Excel file
     out = BytesIO()
     wb.save(out)
     out.seek(0)
