@@ -1,5 +1,22 @@
 import streamlit as st
 
+
+# Remove sidebar
+st.set_page_config(
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
+
+hide_sidebar_style = """
+    <style>
+        [data-testid="stSidebar"] {display: none;}
+        [data-testid="stSidebarNav"] {display: none;}
+        [data-testid="stSidebarContent"] {display: none;}
+    </style>
+"""
+st.markdown(hide_sidebar_style, unsafe_allow_html=True)
+
+
 # Import only the modules you actually use
 from app_modules import (
     main_page,
@@ -35,3 +52,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
