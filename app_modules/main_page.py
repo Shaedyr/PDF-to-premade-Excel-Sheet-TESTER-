@@ -30,7 +30,7 @@ def run():
     # Search only when 2+ letters
     if len(query) >= 2:
         # Search BRREG
-        results = fetch_company_by_org(query)
+        results = search_brreg_live(query)
 
         # Normalize results into a list
         if results is None:
@@ -147,4 +147,5 @@ def run():
             excel_bytes=excel_bytes,
             company_name=merged_fields.get("company_name", "Selskap")
         )
+
 
