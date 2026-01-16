@@ -27,8 +27,6 @@ from app_modules import excel_filler
 from app_modules import template_loader
 from app_modules import download
 
-)
-
 # Sidebar page mapping
 PAGES = {
     "🏠 Hovedside": main_page,
@@ -52,6 +50,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
