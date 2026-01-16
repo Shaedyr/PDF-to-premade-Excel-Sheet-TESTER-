@@ -1,12 +1,20 @@
 import streamlit as st
 
 from app_modules.template_loader import load_template
-from app_modules.company_data import fetch_company_by_org, format_company_data
+from app_modules.company_data import (
+    fetch_company_by_org,
+    format_company_data,
+    search_brreg_live
+)
 from app_modules.summary import generate_company_summary
 from app_modules.pdf_parser import extract_fields_from_pdf
 from app_modules.excel_filler import fill_excel
 from app_modules.download import download_excel_file
-from app_modules.company_data import search_brreg_live
+
+# OPTIONAL: You will implement this later
+def fetch_from_proff(org_number: str) -> dict:
+    """Fallback data source if BRREG is missing fields."""
+    return {}  # Placeholder until you add real Proff.no logic
 
 
 def run():
@@ -77,7 +85,19 @@ def run():
     )
 
     company_data = format_company_data(raw_company_data)
-    
+
+    # ---------------------------------------------------------
+    # STEP B: FALLBACK TO PROFF.NO IF BRREG IS MISSING FIELDS
+    # ---------------------------------------------------------
+    missing_keys = [k for k, v in company_data.items() if not v]
+
+    if missing_keys:
+        proff_data = fetch_from_proff(org_number)
+
+        for key in missing_keys:
+            if proff_data.get(key):
+                company_data[key] = proff_data[key]
+
     # ---------------------------------------------------------
     # STEP 4: SUMMARY
     # ---------------------------------------------------------
@@ -133,10 +153,3 @@ def run():
             excel_bytes=excel_bytes,
             company_name=merged_fields.get("company_name", "Selskap")
         )
-
-
-
-
-
-
-
