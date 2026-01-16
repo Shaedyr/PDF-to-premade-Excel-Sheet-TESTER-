@@ -15,63 +15,66 @@ def run():
     st.divider()
 
     # ---------------------------------------------------------
-    # STEP 1: INPUTS (REPLACED get_user_inputs)
-    # ---------------------------------------------------------
-    st.subheader("🔍 Finn selskap")
+# STEP 1: SINGLE SEARCH BOX (Option One)
+# ---------------------------------------------------------
+st.subheader("🔍 Finn selskap")
 
-    # User types company name
-    query = st.text_input("Selskapsnavn (skriv minst 2 bokstaver)")
+# User types directly here
+query = st.text_input(
+    "Søk etter selskap",
+    placeholder="Skriv minst 2 bokstaver for å søke"
+)
 
-    # Always show the selectbox
-    select_placeholder = st.empty()
+# Always show the dropdown below
+select_placeholder = st.empty()
 
-    selected_company_raw = None
+selected_company_raw = None
 
-    # Search only when 2+ letters
-    if len(query) >= 2:
-        # Search BRREG
-        results = search_brreg_live(query)
+if len(query) >= 2:
+    # Use your existing live search function
+    from app_modules.company_data import search_brreg_live
+    results = search_brreg_live(query)
 
-        # Normalize results into a list
-        if results is None:
-            results = []
-        elif isinstance(results, dict):
-            results = [results]
-        elif not isinstance(results, list):
-            results = []
+    # Normalize results
+    if results is None:
+        results = []
+    elif isinstance(results, dict):
+        results = [results]
+    elif not isinstance(results, list):
+        results = []
 
-        # Convert results to readable labels
-        company_options = [
-            f"{c.get('navn', '')} ({c.get('organisasjonsnummer', '')})"
-            for c in results
-        ]
+    # Convert results to readable labels
+    company_options = [
+        f"{c.get('navn', '')} ({c.get('organisasjonsnummer', '')})"
+        for c in results
+    ]
 
-        selected_label = select_placeholder.selectbox(
-            "Velg selskap",
-            company_options,
-            index=None,
-            placeholder="Velg et selskap"
-        )
+    selected_label = select_placeholder.selectbox(
+        "Velg selskap",
+        company_options,
+        index=None,
+        placeholder="Velg et selskap"
+    )
 
-        if selected_label:
-            idx = company_options.index(selected_label)
-            selected_company_raw = results[idx]
+    if selected_label:
+        idx = company_options.index(selected_label)
+        selected_company_raw = results[idx]
 
-    else:
-        # Empty selectbox so UI stays stable
-        select_placeholder.selectbox(
-            "Velg selskap",
-            [],
-            index=None,
-            placeholder="Skriv minst 2 bokstaver for å søke"
-        )
+else:
+    # Empty dropdown so layout stays stable
+    select_placeholder.selectbox(
+        "Velg selskap",
+        [],
+        index=None,
+        placeholder="Skriv minst 2 bokstaver for å søke"
+    )
 
-    # PDF upload stays the same
-    pdf_bytes = st.file_uploader("Last opp PDF", type=["pdf"])
+# PDF upload stays the same
+pdf_bytes = st.file_uploader("Last opp PDF", type=["pdf"])
 
-    if not selected_company_raw:
-        st.info("Velg et selskap for å fortsette.")
-        return
+if not selected_company_raw:
+    st.info("Velg et selskap for å fortsette.")
+    return
 
     # ---------------------------------------------------------
     # STEP 2: LOAD TEMPLATE
@@ -147,5 +150,6 @@ def run():
             excel_bytes=excel_bytes,
             company_name=merged_fields.get("company_name", "Selskap")
         )
+
 
 
