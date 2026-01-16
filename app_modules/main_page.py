@@ -15,58 +15,46 @@ def run():
     st.divider()
 
     # ---------------------------------------------------------
-    # STEP 1: SINGLE SEARCH BOX (true combo-box behavior)
-    # ---------------------------------------------------------
-    st.subheader("🔍 Finn selskap")
+# STEP 1: SINGLE SEARCHABLE DROPDOWN (combo-box)
+# ---------------------------------------------------------
+st.subheader("🔍 Finn selskap")
 
-    # This is the ONLY visible input box
-    query = st.text_input(
-        "Søk etter selskap",
-        placeholder="Skriv minst 2 bokstaver for å søke"
+# One widget that is both search + dropdown
+query = st.selectbox(
+    "Søk etter selskap",
+    options=[],
+    index=None,
+    placeholder="Skriv minst 2 bokstaver for å søke",
+)
+
+selected_company_raw = None
+
+if query and len(query) >= 2:
+    results = search_brreg_live(query)
+
+    # Normalize results
+    if results is None:
+        results = []
+    elif isinstance(results, dict):
+        results = [results]
+    elif not isinstance(results, list):
+        results = []
+
+    company_options = [
+        f"{c.get('navn', '')} ({c.get('organisasjonsnummer', '')})"
+        for c in results
+    ]
+
+    selected_label = st.selectbox(
+        "Velg selskap",
+        company_options,
+        index=None,
+        placeholder="Velg et selskap"
     )
 
-    selected_company_raw = None
-
-    # Placeholder for dropdown (appears under the same box)
-    dropdown = st.empty()
-
-    if len(query) >= 2:
-        results = search_brreg_live(query)
-
-        # Normalize results
-        if results is None:
-            results = []
-        elif isinstance(results, dict):
-            results = [results]
-        elif not isinstance(results, list):
-            results = []
-
-        # Build dropdown labels
-        company_options = [
-            f"{c.get('navn', '')} ({c.get('organisasjonsnummer', '')})"
-            for c in results
-        ]
-
-        # Show dropdown only when results exist
-        selected_label = dropdown.selectbox(
-            "Velg selskap",
-            company_options,
-            index=None,
-            placeholder="Velg et selskap"
-        )
-
-        if selected_label:
-            idx = company_options.index(selected_label)
-            selected_company_raw = results[idx]
-
-    else:
-        # Keep layout stable with an empty dropdown
-        dropdown.selectbox(
-            "Velg selskap",
-            [],
-            index=None,
-            placeholder="Skriv minst 2 bokstaver for å søke"
-        )
+    if selected_label:
+        idx = company_options.index(selected_label)
+        selected_company_raw = results[idx]
 
     # PDF upload stays the same
     pdf_bytes = st.file_uploader("Last opp PDF", type=["pdf"])
@@ -149,3 +137,4 @@ def run():
             excel_bytes=excel_bytes,
             company_name=merged_fields.get("company_name", "Selskap")
         )
+
