@@ -15,46 +15,46 @@ def run():
     st.divider()
 
     # ---------------------------------------------------------
-# STEP 1: SINGLE SEARCHABLE DROPDOWN (combo-box)
-# ---------------------------------------------------------
-st.subheader("🔍 Finn selskap")
+    # STEP 1: SINGLE SEARCHABLE DROPDOWN (combo-box)
+    # ---------------------------------------------------------
+    st.subheader("🔍 Finn selskap")
 
-# One widget that is both search + dropdown
-query = st.selectbox(
-    "Søk etter selskap",
-    options=[],
-    index=None,
-    placeholder="Skriv minst 2 bokstaver for å søke",
-)
-
-selected_company_raw = None
-
-if query and len(query) >= 2:
-    results = search_brreg_live(query)
-
-    # Normalize results
-    if results is None:
-        results = []
-    elif isinstance(results, dict):
-        results = [results]
-    elif not isinstance(results, list):
-        results = []
-
-    company_options = [
-        f"{c.get('navn', '')} ({c.get('organisasjonsnummer', '')})"
-        for c in results
-    ]
-
-    selected_label = st.selectbox(
-        "Velg selskap",
-        company_options,
+    # One widget that is both search + dropdown
+    query = st.selectbox(
+        "Søk etter selskap",
+        options=[],
         index=None,
-        placeholder="Velg et selskap"
+        placeholder="Skriv minst 2 bokstaver for å søke",
     )
 
-    if selected_label:
-        idx = company_options.index(selected_label)
-        selected_company_raw = results[idx]
+    selected_company_raw = None
+
+    if query and len(query) >= 2:
+        results = search_brreg_live(query)
+
+        # Normalize results
+        if results is None:
+            results = []
+        elif isinstance(results, dict):
+            results = [results]
+        elif not isinstance(results, list):
+            results = []
+
+        company_options = [
+            f"{c.get('navn', '')} ({c.get('organisasjonsnummer', '')})"
+            for c in results
+        ]
+
+        selected_label = st.selectbox(
+            "Velg selskap",
+            company_options,
+            index=None,
+            placeholder="Velg et selskap"
+        )
+
+        if selected_label:
+            idx = company_options.index(selected_label)
+            selected_company_raw = results[idx]
 
     # PDF upload stays the same
     pdf_bytes = st.file_uploader("Last opp PDF", type=["pdf"])
@@ -137,4 +137,3 @@ if query and len(query) >= 2:
             excel_bytes=excel_bytes,
             company_name=merged_fields.get("company_name", "Selskap")
         )
-
