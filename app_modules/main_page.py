@@ -66,15 +66,17 @@ def run():
     template_bytes = st.session_state.template_bytes
 
     # ---------------------------------------------------------
-    # STEP 3: COMPANY DATA
+    # STEP 3: FALLBACK TO PROFF.NO IF BRREG IS MISSING FIELDS
     # ---------------------------------------------------------
-    org_number = selected_company_raw.get("organisasjonsnummer")
-    raw_company_data = (
-        fetch_company_by_org(org_number)
-        if org_number
-        else selected_company_raw
-    )
-    company_data = format_company_data(raw_company_data)
+    missing_keys = [k for k, v in company_data.items() if not v]
+
+    if missing_keys:
+        proff_data = fetch_from_proff(org_number)
+
+        # Only fill missing fields, never overwrite BRREG data
+        for key in missing_keys:
+            if proff_data.get(key):
+                company_data[key] = proff_data[key]
 
     # ---------------------------------------------------------
     # STEP 4: SUMMARY
@@ -131,6 +133,7 @@ def run():
             excel_bytes=excel_bytes,
             company_name=merged_fields.get("company_name", "Selskap")
         )
+
 
 
 
