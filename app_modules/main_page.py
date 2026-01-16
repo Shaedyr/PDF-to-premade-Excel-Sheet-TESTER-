@@ -14,7 +14,7 @@ def run():
     st.caption("Hent selskapsinformasjon og oppdater Excel automatisk")
     st.divider()
 
-        # ---------------------------------------------------------
+    # ---------------------------------------------------------
     # STEP 1: SEARCH BAR + RESULT DROPDOWN
     # ---------------------------------------------------------
     st.subheader("🔍 Finn selskap")
@@ -50,13 +50,13 @@ def run():
         idx = company_options.index(selected_label)
         selected_company_raw = results[idx]
 
-    # ← THIS MUST BE OUTSIDE THE IF BLOCK
+    # PDF upload (always outside the IF block)
     pdf_bytes = st.file_uploader("Last opp PDF", type=["pdf"])
 
     if not selected_company_raw:
         st.info("Velg et selskap for å fortsette.")
         return
-            
+
     # ---------------------------------------------------------
     # STEP 2: LOAD TEMPLATE
     # ---------------------------------------------------------
@@ -66,18 +66,18 @@ def run():
     template_bytes = st.session_state.template_bytes
 
     # ---------------------------------------------------------
-    # STEP 3: FALLBACK TO PROFF.NO IF BRREG IS MISSING FIELDS
+    # STEP 3: FETCH BRREG COMPANY DATA
     # ---------------------------------------------------------
-    missing_keys = [k for k, v in company_data.items() if not v]
+    org_number = selected_company_raw.get("organisasjonsnummer")
 
-    if missing_keys:
-        proff_data = fetch_from_proff(org_number)
+    raw_company_data = (
+        fetch_company_by_org(org_number)
+        if org_number
+        else selected_company_raw
+    )
 
-        # Only fill missing fields, never overwrite BRREG data
-        for key in missing_keys:
-            if proff_data.get(key):
-                company_data[key] = proff_data[key]
-
+    company_data = format_company_data(raw_company_data)
+    
     # ---------------------------------------------------------
     # STEP 4: SUMMARY
     # ---------------------------------------------------------
@@ -133,6 +133,7 @@ def run():
             excel_bytes=excel_bytes,
             company_name=merged_fields.get("company_name", "Selskap")
         )
+
 
 
 
