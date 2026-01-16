@@ -1,6 +1,5 @@
 import streamlit as st
 
-from app_modules.input import get_user_inputs
 from app_modules.template_loader import load_template
 from app_modules.company_data import fetch_company_by_org, format_company_data
 from app_modules.summary import generate_company_summary
@@ -15,16 +14,58 @@ def run():
     st.divider()
 
     # ---------------------------------------------------------
-    # STEP 1: INPUTS
+    # STEP 1: INPUTS (REPLACED get_user_inputs)
     # ---------------------------------------------------------
-    pdf_bytes, selected_company_raw = get_user_inputs()
+    st.subheader("🔍 Finn selskap")
+
+    # User types company name
+    query = st.text_input("Selskapsnavn (skriv minst 2 bokstaver)")
+
+    # Always show the selectbox
+    select_placeholder = st.empty()
+
+    selected_company_raw = None
+
+    # Search only when 2+ letters
+    if len(query) >= 2:
+        # Search BRREG
+        results = fetch_company_by_org(query)
+
+        # Convert results to readable labels
+        company_options = [
+            f"{c.get('navn', '')} ({c.get('organisasjonsnummer', '')})"
+            for c in results
+        ]
+
+        selected_label = select_placeholder.selectbox(
+            "Velg selskap",
+            company_options,
+            index=None,
+            placeholder="Velg et selskap"
+        )
+
+        if selected_label:
+            idx = company_options.index(selected_label)
+            selected_company_raw = results[idx]
+
+    else:
+        # Empty selectbox so UI stays stable
+        select_placeholder.selectbox(
+            "Velg selskap",
+            [],
+            index=None,
+            placeholder="Skriv minst 2 bokstaver for å søke"
+        )
+
+    # PDF upload stays the same
+    pdf_bytes = st.file_uploader("Last opp PDF", type=["pdf"])
 
     if not selected_company_raw:
         st.info("Velg et selskap for å fortsette.")
         return
 
     # ---------------------------------------------------------
-    # STEP 2: LOAD TEMPLATE (DIRECT ONEDRIVE LINK)
+    # STEP 2: LOAD TEMPLATE
     # ---------------------------------------------------------
     if "template_bytes" not in st.session_state:
         st.session_state.template_bytes = load_template()
