@@ -15,22 +15,31 @@ def run():
     st.divider()
 
     # ---------------------------------------------------------
-    # STEP 1: SINGLE SEARCHABLE DROPDOWN (combo-box)
+    # STEP 1: TRUE SINGLE SEARCHABLE DROPDOWN
     # ---------------------------------------------------------
     st.subheader("🔍 Finn selskap")
 
-    # User types here to search
-    query = st.text_input(
-        "Søk etter selskap",
-        placeholder="Skriv minst 2 bokstaver for å søke"
+    # We store the search query in session_state so the dropdown can update
+    if "search_query" not in st.session_state:
+        st.session_state.search_query = ""
+
+    # This is the ONE widget: user types AND selects here
+    selected_label = st.selectbox(
+        "Søk og velg selskap",
+        options=[],
+        index=None,
+        placeholder="Skriv minst 2 bokstaver for å søke",
+        key="company_selector"
     )
+
+    # Extract the text the user typed into the selectbox
+    query = st.session_state.company_selector
 
     selected_company_raw = None
 
     if query and len(query) >= 2:
         results = search_brreg_live(query)
 
-        # Normalize results
         if not isinstance(results, list):
             results = []
 
@@ -39,24 +48,27 @@ def run():
             for c in results
         ]
 
-        selected_label = st.selectbox(
-            "Velg selskap",
+        # Update the selectbox options dynamically
+        st.session_state.company_selector = st.selectbox(
+            "Søk og velg selskap",
             company_options,
             index=None,
-            placeholder="Velg et selskap"
+            placeholder="Velg et selskap",
+            key="company_selector_updated"
         )
+
+        selected_label = st.session_state.company_selector
 
         if selected_label:
             idx = company_options.index(selected_label)
             selected_company_raw = results[idx]
 
-    # This MUST be outside the IF block
+    # PDF upload
     pdf_bytes = st.file_uploader("Last opp PDF", type=["pdf"])
 
     if not selected_company_raw:
         st.info("Velg et selskap for å fortsette.")
         return
-
             
     # ---------------------------------------------------------
     # STEP 2: LOAD TEMPLATE
@@ -132,5 +144,6 @@ def run():
             excel_bytes=excel_bytes,
             company_name=merged_fields.get("company_name", "Selskap")
         )
+
 
 
