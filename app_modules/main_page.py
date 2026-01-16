@@ -18,7 +18,7 @@ def fetch_from_proff(org_number: str) -> dict:
 
 
 def run():
-    st.title("📄 PDF → Excel (Brønnøysund)")
+    st.title("📄 PDF → Excel (Brønnøysund,Proff)")
     st.caption("Hent selskapsinformasjon og oppdater Excel automatisk")
     st.divider()
 
@@ -153,3 +153,4 @@ def run():
             excel_bytes=excel_bytes,
             company_name=merged_fields.get("company_name", "Selskap")
         )
+
