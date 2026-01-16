@@ -1,4 +1,5 @@
 import streamlit as st
+import app_modules.input as input_module
 
 
 # Remove sidebar
@@ -18,15 +19,14 @@ st.markdown(hide_sidebar_style, unsafe_allow_html=True)
 
 
 # Import only the modules you actually use
-from app_modules import (
-    main_page,
-    input as input_module,
-    company_data,
-    pdf_parser,
-    summary,
-    excel_filler,
-    template_loader,
-    download,
+from app_modules import main_page
+from app_modules import company_data
+from app_modules import pdf_parser
+from app_modules import summary
+from app_modules import excel_filler
+from app_modules import template_loader
+from app_modules import download
+
 )
 
 # Sidebar page mapping
@@ -52,5 +52,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
