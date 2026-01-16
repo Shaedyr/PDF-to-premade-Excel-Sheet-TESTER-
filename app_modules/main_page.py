@@ -14,24 +14,23 @@ def run():
     st.caption("Hent selskapsinformasjon og oppdater Excel automatisk")
     st.divider()
 
-    # ---------------------------------------------------------
-# STEP 1: SINGLE SEARCH BOX (Option One)
+# ---------------------------------------------------------
+# STEP 1: SINGLE SEARCH BOX (true combo-box behavior)
 # ---------------------------------------------------------
 st.subheader("🔍 Finn selskap")
 
-# User types directly here
+# This is the ONLY visible input box
 query = st.text_input(
     "Søk etter selskap",
     placeholder="Skriv minst 2 bokstaver for å søke"
 )
 
-# Always show the dropdown below
-select_placeholder = st.empty()
-
 selected_company_raw = None
 
+# Placeholder for dropdown (appears under the same box)
+dropdown = st.empty()
+
 if len(query) >= 2:
-    # Use your existing live search function
     from app_modules.company_data import search_brreg_live
     results = search_brreg_live(query)
 
@@ -43,13 +42,14 @@ if len(query) >= 2:
     elif not isinstance(results, list):
         results = []
 
-    # Convert results to readable labels
+    # Build dropdown labels
     company_options = [
         f"{c.get('navn', '')} ({c.get('organisasjonsnummer', '')})"
         for c in results
     ]
 
-    selected_label = select_placeholder.selectbox(
+    # Show dropdown only when results exist
+    selected_label = dropdown.selectbox(
         "Velg selskap",
         company_options,
         index=None,
@@ -61,8 +61,8 @@ if len(query) >= 2:
         selected_company_raw = results[idx]
 
 else:
-    # Empty dropdown so layout stays stable
-    select_placeholder.selectbox(
+    # Keep layout stable with an empty dropdown
+    dropdown.selectbox(
         "Velg selskap",
         [],
         index=None,
@@ -150,6 +150,7 @@ if not selected_company_raw:
             excel_bytes=excel_bytes,
             company_name=merged_fields.get("company_name", "Selskap")
         )
+
 
 
 
