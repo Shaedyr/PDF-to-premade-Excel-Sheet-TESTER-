@@ -14,12 +14,11 @@ def run():
     st.caption("Hent selskapsinformasjon og oppdater Excel automatisk")
     st.divider()
 
-    # ---------------------------------------------------------
-    # STEP 1: SEARCH BAR + RESULT DROPDOWN (clean unified UI)
+        # ---------------------------------------------------------
+    # STEP 1: SEARCH BAR + RESULT DROPDOWN
     # ---------------------------------------------------------
     st.subheader("🔍 Finn selskap")
 
-    # User types here
     query = st.text_input(
         "Søk etter selskap",
         placeholder="Skriv minst 2 bokstaver for å søke"
@@ -29,7 +28,6 @@ def run():
     company_options = []
     results = []
 
-    # When user types 2+ letters → call Brønnøysund
     if query and len(query) >= 2:
         results = search_brreg_live(query)
 
@@ -41,7 +39,6 @@ def run():
             for c in results
         ]
 
-    # This dropdown appears directly under the search bar
     selected_label = st.selectbox(
         "Velg selskap",
         company_options,
@@ -52,6 +49,13 @@ def run():
     if selected_label:
         idx = company_options.index(selected_label)
         selected_company_raw = results[idx]
+
+    # ← THIS MUST BE OUTSIDE THE IF BLOCK
+    pdf_bytes = st.file_uploader("Last opp PDF", type=["pdf"])
+
+    if not selected_company_raw:
+        st.info("Velg et selskap for å fortsette.")
+        return
             
     # ---------------------------------------------------------
     # STEP 2: LOAD TEMPLATE
@@ -127,6 +131,7 @@ def run():
             excel_bytes=excel_bytes,
             company_name=merged_fields.get("company_name", "Selskap")
         )
+
 
 
 
