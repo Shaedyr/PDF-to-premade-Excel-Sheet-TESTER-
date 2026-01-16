@@ -31,6 +31,14 @@ def run():
         # Search BRREG
         results = fetch_company_by_org(query)
 
+        # Normalize results into a list
+        if results is None:
+            results = []
+        elif isinstance(results, dict):
+            results = [results]
+        elif not isinstance(results, list):
+            results = []
+
         # Convert results to readable labels
         company_options = [
             f"{c.get('navn', '')} ({c.get('organisasjonsnummer', '')})"
