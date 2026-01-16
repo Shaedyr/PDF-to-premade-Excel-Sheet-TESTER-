@@ -15,11 +15,10 @@ CELL_MAP = {
         "nace_description": "B10",     # NACE-bransje
         "homepage": "B11",             # Hjemmeside
         "claims_history": "B12",       # Skadetall
-        "company_summary": "B13",      # Om bedriften
-        "current_insurer": "B14",      # Dagens selskap
-        "tender_deadline": "B15",      # Anbudsfrist
-        "revenue_2024": "B16",         # Omsetning 2024 (Proff.NO)
-        "financials": "B17",           # Økonomi
+        "current_insurer": "B13",      # Dagens selskap
+        "tender_deadline": "B14",      # Anbudsfrist
+        "revenue_2024": "B15",         # Omsetning 2024 (Proff.NO)
+        "financials": "B16",           # Økonomi
     }
   
   # More sheets will be added here
