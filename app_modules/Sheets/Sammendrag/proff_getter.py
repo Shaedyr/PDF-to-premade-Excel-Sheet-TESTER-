@@ -1,7 +1,6 @@
-# app_modules/Sheets/Sammendrag/proff_getter.py
+# app_modules/Sheets/Sammendrag/proff_getter_FIXED.py
 """
-Full Proff getter implementation placed inside the Sammendrag sheet folder.
-This is a self-contained scraper/normalizer for proff.no company pages.
+FIXED Proff getter - uses updated Proff.no URLs
 """
 
 import re
@@ -9,148 +8,204 @@ import logging
 from functools import lru_cache
 import requests
 from bs4 import BeautifulSoup
+import streamlit as st
 
 logger = logging.getLogger(__name__)
-HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; SammendragBot/1.0)"}
-SEARCH_URL = "https://www.proff.no/sok/"
+HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+
+# UPDATED: Proff.no changed their URLs
 BASE_URL = "https://www.proff.no"
 
 def _safe_get(url, params=None, timeout=10):
     try:
+        st.write(f"🌐 Fetching: {url}")
         r = requests.get(url, params=params, headers=HEADERS, timeout=timeout)
+        st.write(f"📊 Status: {r.status_code}")
+        
         if r.status_code == 200:
+            st.success(f"✅ Success!")
             return r.text
-        logger.debug("Request to %s returned %s", url, r.status_code)
+        else:
+            st.error(f"❌ Error {r.status_code}")
+            
     except Exception as e:
-        logger.warning("HTTP request failed for %s: %s", url, e)
+        st.error(f"❌ HTTP error: {e}")
     return None
 
 def _extract_org_no(text):
     m = re.search(r"\b(\d{9})\b", text)
     return m.group(1) if m else None
 
-def _find_company_page(query):
+def _build_company_url(org_number):
     """
-    Search Proff and return the first company page URL found for the query.
-    Query can be orgnr or company name.
+    Build direct company page URL using org number.
+    Proff.no format: /roller/[org_number]
     """
-    html = _safe_get(SEARCH_URL, params={"q": query})
-    if not html:
-        return None
-    soup = BeautifulSoup(html, "html.parser")
-    # Proff search results link pattern contains '/selskap/'
-    link = soup.select_one("a[href*='/selskap/']")
-    if not link:
-        # try alternative selector
-        link = soup.select_one("a.result-item, a.search-result")
-    if not link:
-        return None
-    href = link.get("href")
-    if href and href.startswith("/"):
-        href = BASE_URL + href
-    logger.info("Proff: found company page %s for query %s", href, query)
-    return href
+    return f"{BASE_URL}/roller/{org_number}"
 
 def _parse_financial_table(soup):
     """
-    Parse the main financial table(s) and return normalized keys:
-    sum_driftsinnt_{year}, driftsresultat_{year}, ord_res_f_skatt_{year}, sum_eiendeler_{year}
+    Parse financial table
     """
+    st.write("💰 Parsing financial data...")
+    
     data = {}
-    # Try common table classes, fallback to first table
-    table = soup.select_one("table.financial-table, table.regnskapstall, table.table-responsive") or soup.find("table")
-    if not table:
+    tables = soup.find_all("table")
+    st.write(f"📊 Found {len(tables)} tables")
+    
+    if not tables:
         return data
-
-    # Extract years from header cells
+    
+    # Try to find the financial table
+    financial_table = None
+    for table in tables:
+        # Look for table with financial keywords
+        table_text = table.get_text().lower()
+        if any(word in table_text for word in ["resultat", "inntekt", "eiendel", "driftsinntekt"]):
+            financial_table = table
+            st.write("✅ Found financial table")
+            break
+    
+    if not financial_table:
+        st.warning("⚠️ No financial table found")
+        return data
+    
+    # Extract years
     years = []
-    for th in table.find_all("th"):
-        year = re.sub(r"\D", "", th.get_text())
-        if year:
-            years.append(year)
-    # Keep only relevant recent years if present
-    years = [y for y in years if y in ("2024", "2023", "2022")] or years[:3]
-
-    for row in table.find_all("tr"):
-        cells_all = row.find_all(["th", "td"])
-        if not cells_all:
+    for th in financial_table.find_all("th"):
+        year_match = re.search(r"(202\d)", th.get_text())
+        if year_match:
+            years.append(year_match.group(1))
+    
+    years = list(dict.fromkeys(years))  # Remove duplicates, keep order
+    st.write(f"📅 Years found: {years}")
+    
+    # Parse rows
+    for row in financial_table.find_all("tr"):
+        cells = row.find_all(["th", "td"])
+        if len(cells) < 2:
             continue
-        label = cells_all[0].get_text(strip=True).lower()
-        cells = [c.get_text(strip=True).replace("\xa0", " ").strip() for c in cells_all[1:]]
+        
+        label = cells[0].get_text(strip=True).lower()
+        
         for i, year in enumerate(years):
-            if i >= len(cells):
+            if i + 1 >= len(cells):
                 continue
-            value = cells[i]
-            if not value:
+            
+            value = cells[i + 1].get_text(strip=True)
+            if not value or value == "-":
                 continue
-            # Normalize numeric formatting: remove spaces, non-digit except - and ,
-            norm = re.sub(r"[^\d\-,\.]", "", value)
-            # Map labels to keys
-            if "sum driftsinn" in label or "driftsinntekter" in label or "sum driftsinntekter" in label:
-                data[f"sum_driftsinnt_{year}"] = norm
-            elif "driftsresultat" in label:
-                data[f"driftsresultat_{year}"] = norm
-            elif "resultat før skatt" in label or "ordinært resultat" in label:
-                data[f"ord_res_f_skatt_{year}"] = norm
-            elif "sum eiendeler" in label or "eiendeler" in label:
-                data[f"sum_eiendeler_{year}"] = norm
+            
+            # Clean the value
+            clean_value = re.sub(r"[^\d\-,]", "", value.replace(" ", ""))
+            
+            # Match financial fields
+            if "sum driftsinntekt" in label or "driftsinntekter" in label:
+                data[f"sum_driftsinnt_{year}"] = clean_value
+                st.write(f"  ✓ Revenue {year}: {clean_value}")
+            elif "driftsresultat" in label and "før" not in label:
+                data[f"driftsresultat_{year}"] = clean_value
+                st.write(f"  ✓ Operating result {year}: {clean_value}")
+            elif "resultat før skatt" in label or "ordinært resultat før skatt" in label:
+                data[f"ord_res_f_skatt_{year}"] = clean_value
+                st.write(f"  ✓ Result before tax {year}: {clean_value}")
+            elif "sum eiendeler" in label:
+                data[f"sum_eiendeler_{year}"] = clean_value
+                st.write(f"  ✓ Total assets {year}: {clean_value}")
+    
     return data
 
 def _parse_company_info(soup):
     """
-    Extract company-level info: website, short economy summary, current insurer, anbudsfrist, employees
+    Extract company info
     """
+    st.write("🏢 Parsing company info...")
+    
     data = {}
-    # Website: look for explicit http links in company info area
-    link = soup.select_one(".company-info a[href^='http'], .company-details a[href^='http'], a.company-website[href^='http']")
-    if link and link.get("href"):
-        data["website"] = link["href"].strip()
-
     text = soup.get_text(" ", strip=True)
-    # Current insurer (if present in text)
-    m = re.search(r"Dagens selskap[:\s]+([A-Za-z0-9 .\-]+)", text)
-    if m:
-        data["current_insurer"] = m.group(1).strip()
-    # Anbudsfrist (deadline)
-    m = re.search(r"Anbudsfrist[:\s]+([0-9.\-]+)", text)
-    if m:
-        data["anbudsfrist"] = m.group(1).strip()
-    # Economy summary heuristics
-    m = re.search(r"Økonomi[:\s]+(.+?)(?:\s{2,}|$)", text)
-    if m:
-        data["economy_summary"] = m.group(1).strip()
-    # Employees: try to find "Ansatte" or "Antall ansatte"
-    m = re.search(r"(?:Ansatte|Antall ansatte)[:\s]+(\d+)", text)
-    if m:
-        data["employees"] = m.group(1)
-    # Try to extract orgnr from page text if present
-    org = _extract_org_no(text)
-    if org:
-        data["org_no"] = org
+    
+    # Website - look for http links
+    for link in soup.find_all("a", href=True):
+        href = link.get("href", "")
+        if href.startswith("http") and "proff.no" not in href:
+            data["homepage"] = href
+            st.write(f"  ✓ Homepage: {href}")
+            break
+    
+    # Employees
+    employee_match = re.search(r"(?:Ansatte|Antall ansatte)[:\s]+(\d+)", text)
+    if employee_match:
+        data["employees"] = employee_match.group(1)
+        st.write(f"  ✓ Employees: {data['employees']}")
+    
     return data
 
 @lru_cache(maxsize=1024)
-def fetch_proff_info(query: str) -> dict:
+def fetch_proff_info(org_number: str) -> dict:
     """
-    Public function: given a query (orgnr or name), return a dict with financials and company info.
+    Fetch company info from Proff.no using organization number
     """
-    if not query:
+    st.write("=" * 50)
+    st.write("🚀 FETCHING FROM PROFF.NO (FIXED VERSION)")
+    st.write("=" * 50)
+    
+    if not org_number or not org_number.isdigit():
+        st.error("❌ Invalid org number")
         return {}
-    # If query is an orgnr, try to find page by orgnr first (Proff search supports it)
-    url = _find_company_page(query)
-    if not url:
-        return {}
+    
+    # Try direct company page URL
+    url = _build_company_url(org_number)
+    st.write(f"🔗 Company page: {url}")
+    
     html = _safe_get(url)
+    
+    if not html:
+        st.error("❌ Could not fetch company page")
+        
+        # Try alternative: search by org number
+        st.write("🔄 Trying alternative method...")
+        search_url = f"{BASE_URL}/bransjes%C3%B8k?q={org_number}"
+        st.write(f"🔗 Search URL: {search_url}")
+        
+        html = _safe_get(search_url)
+        if not html:
+            return {}
+        
+        # Try to find company link in search results
+        soup = BeautifulSoup(html, "html.parser")
+        company_link = soup.find("a", href=re.compile(r"/roller/\d+"))
+        
+        if company_link:
+            new_url = BASE_URL + company_link.get("href")
+            st.write(f"✅ Found company link: {new_url}")
+            html = _safe_get(new_url)
+    
     if not html:
         return {}
+    
     soup = BeautifulSoup(html, "html.parser")
+    
     out = {}
     try:
-        out.update(_parse_financial_table(soup))
-        out.update(_parse_company_info(soup))
+        financial_data = _parse_financial_table(soup)
+        out.update(financial_data)
+        
+        company_info = _parse_company_info(soup)
+        out.update(company_info)
+        
     except Exception as e:
-        logger.warning("Error parsing Proff page %s: %s", url, e)
-    # Ensure org_no exists if possible
-    if "org_no" not in out:
-        out["org_no"] = _extract_org_no(soup.get_text(" ", strip=True))
+        st.error(f"❌ Parsing error: {e}")
+        import traceback
+        st.code(traceback.format_exc())
+    
+    st.write("=" * 50)
+    st.write(f"✅ DONE! Fetched {len(out)} fields")
+    st.write("=" * 50)
+    
+    if out:
+        st.json(out)
+    else:
+        st.warning("⚠️ No data was extracted")
+        st.info("💡 This company might not have financial data on Proff.no, or the page structure is different than expected.")
+    
     return out
