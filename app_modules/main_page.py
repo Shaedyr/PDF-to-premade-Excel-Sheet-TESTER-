@@ -6,15 +6,11 @@ from app_modules.company_data import (
     format_company_data,
     search_brreg_live
 )
-from app_modules.Sheets.Sammendrag.summery_getter import generate_company_summary  # FIXED: Correct import path
+from app_modules.Sheets.Sammendrag.summery_getter import generate_company_summary
+from app_modules.Sheets.Sammendrag.proff_getter import fetch_proff_info  # ADDED: Real Proff.no getter
 from app_modules.pdf_parser import extract_fields_from_pdf
-from app_modules.Sheets.excel_filler import fill_excel  # FIXED: Correct import path
+from app_modules.Sheets.excel_filler import fill_excel
 from app_modules.download import download_excel_file
-
-# OPTIONAL: You will implement this later
-def fetch_from_proff(org_number: str) -> dict:
-    """Fallback data source if BRREG is missing fields."""
-    return {}  # Placeholder until you add real Proff.no logic
 
 
 def run():
@@ -87,16 +83,26 @@ def run():
     company_data = format_company_data(raw_company_data)
 
     # ---------------------------------------------------------
-    # STEP B: FALLBACK TO PROFF.NO IF BRREG IS MISSING FIELDS
+    # STEP 3B: FETCH PROFF.NO FINANCIAL DATA
     # ---------------------------------------------------------
-    missing_keys = [k for k, v in company_data.items() if not v]
+    st.info("🔍 Henter finansiell data fra Proff.no...")
+    proff_data = {}
+    
+    if org_number:
+        try:
+            proff_data = fetch_proff_info(org_number)
+            if proff_data:
+                st.success(f"✅ Hentet {len(proff_data)} felt fra Proff.no")
+            else:
+                st.warning("⚠️ Kunne ikke hente data fra Proff.no")
+        except Exception as e:
+            st.warning(f"⚠️ Feil ved henting fra Proff.no: {e}")
 
-    if missing_keys:
-        proff_data = fetch_from_proff(org_number)
-
-        for key in missing_keys:
-            if proff_data.get(key):
-                company_data[key] = proff_data[key]
+    # Merge Proff data with company data
+    # Proff data can fill in missing fields OR add new fields (like financials)
+    for key, value in proff_data.items():
+        if value:  # Only add non-empty values
+            company_data[key] = value
 
     # ---------------------------------------------------------
     # STEP 4: SUMMARY
@@ -112,8 +118,8 @@ def run():
     # MERGE FIELDS
     # ---------------------------------------------------------
     merged_fields = {}
-    merged_fields.update(company_data)
-    merged_fields.update(pdf_fields)
+    merged_fields.update(company_data)  # BRREG + Proff.no data
+    merged_fields.update(pdf_fields)    # PDF data (overrides if conflicts)
     merged_fields["company_summary"] = summary_text
 
     st.divider()
@@ -135,6 +141,14 @@ def run():
     with col_right:
         st.markdown("**Sammendrag (går i 'Om oss' / 'Skriv her' celle):**")
         st.info(summary_text or "Ingen tilgjengelig selskapsbeskrivelse.")
+        
+        # Show financial data if available
+        if proff_data:
+            st.markdown("**Finansiell data (fra Proff.no):**")
+            if merged_fields.get("sum_driftsinnt_2024"):
+                st.write("Driftsinntekter 2024:", merged_fields.get("sum_driftsinnt_2024"))
+            if merged_fields.get("driftsresultat_2024"):
+                st.write("Driftsresultat 2024:", merged_fields.get("driftsresultat_2024"))
 
     st.divider()
 
