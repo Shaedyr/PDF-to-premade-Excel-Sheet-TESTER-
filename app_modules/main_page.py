@@ -7,14 +7,13 @@ from app_modules.company_data import (
     search_brreg_live
 )
 from app_modules.Sheets.Sammendrag.summery_getter import generate_company_summary
-from app_modules.Sheets.Sammendrag.manual_financial_form import show_financial_entry_form  # Manual form!
 from app_modules.pdf_parser import extract_fields_from_pdf
 from app_modules.Sheets.excel_filler import fill_excel
 from app_modules.download import download_excel_file
 
 
 def run():
-    st.title("📄 PDF → Excel (BRREG, Manual Entry)")
+    st.title("📄 PDF → Excel (BRREG + Manual Entry)")
     st.caption("Fetch company information and update Excel automatically")
     st.divider()
 
@@ -54,9 +53,6 @@ def run():
         idx = company_options.index(selected_label)
         selected_company_raw = results[idx]
 
-    # PDF upload (always outside the IF block)
-    pdf_bytes = st.file_uploader("Upload PDF", type=["pdf"])
-
     if not selected_company_raw:
         st.info("Select a company to continue.")
         return
@@ -82,31 +78,88 @@ def run():
 
     company_data = format_company_data(raw_company_data)
 
-    # ---------------------------------------------------------
-    # STEP 3B: MANUAL FINANCIAL DATA ENTRY
-    # ---------------------------------------------------------
     st.divider()
     
-    # Show the manual entry form
-    financial_data = show_financial_entry_form()
+    # ---------------------------------------------------------
+    # STEP 4: MANUAL FINANCIAL DATA ENTRY
+    # ---------------------------------------------------------
+    st.subheader("💰 Financial Data (Optional)")
     
-    # Merge financial data with company data
+    st.info("""
+    **Enter financial data manually** (you can find this on Proff.no)
+    
+    Leave blank if not needed - the app will work without it!
+    """)
+    
+    # Create 3 columns for 3 years
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.markdown("**2024**")
+        revenue_2024 = st.text_input("Revenue", key="rev_2024", placeholder="e.g., 15000000")
+        operating_2024 = st.text_input("Operating Result", key="op_2024", placeholder="e.g., 1500000")
+        tax_2024 = st.text_input("Result Before Tax", key="tax_2024", placeholder="e.g., 1200000")
+        assets_2024 = st.text_input("Total Assets", key="assets_2024", placeholder="e.g., 8000000")
+    
+    with col2:
+        st.markdown("**2023**")
+        revenue_2023 = st.text_input("Revenue", key="rev_2023", placeholder="e.g., 14000000")
+        operating_2023 = st.text_input("Operating Result", key="op_2023", placeholder="e.g., 1400000")
+        tax_2023 = st.text_input("Result Before Tax", key="tax_2023", placeholder="e.g., 1100000")
+        assets_2023 = st.text_input("Total Assets", key="assets_2023", placeholder="e.g., 7500000")
+    
+    with col3:
+        st.markdown("**2022**")
+        revenue_2022 = st.text_input("Revenue", key="rev_2022", placeholder="e.g., 13000000")
+        operating_2022 = st.text_input("Operating Result", key="op_2022", placeholder="e.g., 1300000")
+        tax_2022 = st.text_input("Result Before Tax", key="tax_2022", placeholder="e.g., 1000000")
+        assets_2022 = st.text_input("Total Assets", key="assets_2022", placeholder="e.g., 7000000")
+    
+    # Collect financial data
+    financial_data = {}
+    if revenue_2024: financial_data["sum_driftsinnt_2024"] = revenue_2024.strip()
+    if operating_2024: financial_data["driftsresultat_2024"] = operating_2024.strip()
+    if tax_2024: financial_data["ord_res_f_skatt_2024"] = tax_2024.strip()
+    if assets_2024: financial_data["sum_eiendeler_2024"] = assets_2024.strip()
+    
+    if revenue_2023: financial_data["sum_driftsinnt_2023"] = revenue_2023.strip()
+    if operating_2023: financial_data["driftsresultat_2023"] = operating_2023.strip()
+    if tax_2023: financial_data["ord_res_f_skatt_2023"] = tax_2023.strip()
+    if assets_2023: financial_data["sum_eiendeler_2023"] = assets_2023.strip()
+    
+    if revenue_2022: financial_data["sum_driftsinnt_2022"] = revenue_2022.strip()
+    if operating_2022: financial_data["driftsresultat_2022"] = operating_2022.strip()
+    if tax_2022: financial_data["ord_res_f_skatt_2022"] = tax_2022.strip()
+    if assets_2022: financial_data["sum_eiendeler_2022"] = assets_2022.strip()
+    
+    # Show status
+    if financial_data:
+        st.success(f"✅ {len(financial_data)} financial fields entered")
+    else:
+        st.info("ℹ️ No financial data entered - will use only BRREG company data")
+    
+    # Merge financial data
     company_data.update(financial_data)
 
     st.divider()
 
     # ---------------------------------------------------------
-    # STEP 4: SUMMARY
+    # STEP 5: PDF UPLOAD
+    # ---------------------------------------------------------
+    pdf_bytes = st.file_uploader("Upload PDF (optional)", type=["pdf"])
+    
+    # ---------------------------------------------------------
+    # STEP 6: SUMMARY
     # ---------------------------------------------------------
     summary_text = generate_company_summary(company_data)
 
     # ---------------------------------------------------------
-    # STEP 5: PDF FIELDS
+    # STEP 7: PDF FIELDS
     # ---------------------------------------------------------
     pdf_fields = extract_fields_from_pdf(pdf_bytes) if pdf_bytes else {}
 
     # ---------------------------------------------------------
-    # MERGE FIELDS
+    # MERGE ALL FIELDS
     # ---------------------------------------------------------
     merged_fields = {}
     merged_fields.update(company_data)
@@ -114,19 +167,20 @@ def run():
     merged_fields["company_summary"] = summary_text
 
     st.divider()
-    st.subheader("📋 Extracted data")
+    st.subheader("📋 Data Preview")
 
     col_left, col_right = st.columns(2)
 
     with col_left:
-        st.write("**Company name:**", merged_fields.get("company_name", ""))
-        st.write("**Organization number:**", merged_fields.get("org_number", ""))
-        st.write("**Address:**", merged_fields.get("address", ""))
-        st.write("**Postal code:**", merged_fields.get("post_nr", ""))
-        st.write("**City:**", merged_fields.get("city", ""))
-        st.write("**Employees:**", merged_fields.get("employees", ""))
-        st.write("**NACE code:**", merged_fields.get("nace_code", ""))
-        st.write("**NACE description:**", merged_fields.get("nace_description", ""))
+        st.markdown("**Company Info (from BRREG):**")
+        st.write("• Company name:", merged_fields.get("company_name", ""))
+        st.write("• Organization number:", merged_fields.get("org_number", ""))
+        st.write("• Address:", merged_fields.get("address", ""))
+        st.write("• Postal code:", merged_fields.get("post_nr", ""))
+        st.write("• City:", merged_fields.get("city", ""))
+        st.write("• Employees:", merged_fields.get("employees", ""))
+        st.write("• NACE code:", merged_fields.get("nace_code", ""))
+        st.write("• NACE description:", merged_fields.get("nace_description", ""))
 
     with col_right:
         st.markdown("**Summary:**")
@@ -134,16 +188,18 @@ def run():
         
         # Show financial data if entered
         if financial_data:
-            st.markdown("**Financial data (manually entered):**")
+            st.markdown("**Financial Data (manually entered):**")
             if merged_fields.get("sum_driftsinnt_2024"):
-                st.write("Revenue 2024:", merged_fields.get("sum_driftsinnt_2024"))
+                st.write("• Revenue 2024:", merged_fields.get("sum_driftsinnt_2024"))
             if merged_fields.get("driftsresultat_2024"):
-                st.write("Operating result 2024:", merged_fields.get("driftsresultat_2024"))
+                st.write("• Operating result 2024:", merged_fields.get("driftsresultat_2024"))
+            if merged_fields.get("sum_driftsinnt_2023"):
+                st.write("• Revenue 2023:", merged_fields.get("sum_driftsinnt_2023"))
 
     st.divider()
 
     # ---------------------------------------------------------
-    # STEP 6 + 7: PROCESS & DOWNLOAD
+    # STEP 8: PROCESS & DOWNLOAD
     # ---------------------------------------------------------
     if st.button("🚀 Process & Update Excel", use_container_width=True):
         with st.spinner("Processing and filling Excel..."):
