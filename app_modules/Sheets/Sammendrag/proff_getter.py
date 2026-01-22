@@ -1,6 +1,6 @@
 # app_modules/Sheets/Sammendrag/proff_getter.py
 """
-Proff.no getter with improved homepage detection
+Proff.no getter - fetches financial data only (no homepage)
 """
 
 import re
@@ -14,24 +14,6 @@ logger = logging.getLogger(__name__)
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
 
 BASE_URL = "https://www.proff.no"
-
-# Domains to EXCLUDE when looking for company homepage
-EXCLUDED_DOMAINS = [
-    'proff.no',
-    'finn.no', 
-    'nav.no',
-    'brreg.no',
-    'google.com',
-    'facebook.com',
-    'linkedin.com',
-    'career.',  # Career sites
-    'jobs.',    # Job sites
-    'rekruttering.',
-    'stillinger.',
-    'ennento.com',  # Recruitment platform
-    'jobbnorge.no',
-    'arbeidsplassen.no',
-]
 
 def _safe_get(url, params=None, timeout=10):
     try:
@@ -48,18 +30,6 @@ def _safe_get(url, params=None, timeout=10):
     except Exception as e:
         st.error(f"❌ HTTP error: {e}")
     return None
-
-def _is_excluded_domain(url):
-    """Check if URL contains excluded domains"""
-    url_lower = url.lower()
-    for excluded in EXCLUDED_DOMAINS:
-        if excluded in url_lower:
-            return True
-    return False
-
-def _extract_org_no(text):
-    m = re.search(r"\b(\d{9})\b", text)
-    return m.group(1) if m else None
 
 def _build_company_url(org_number):
     """
@@ -140,57 +110,14 @@ def _parse_financial_table(soup):
     
     return data
 
-def _parse_company_info(soup):
-    """
-    Extract company info with improved homepage detection
-    """
-    st.write("🏢 Parsing company info...")
-    
-    data = {}
-    text = soup.get_text(" ", strip=True)
-    
-    # Website - look for http links, but exclude career sites, job sites, etc.
-    st.write("🔍 Looking for company homepage...")
-    
-    found_links = []
-    for link in soup.find_all("a", href=True):
-        href = link.get("href", "")
-        
-        # Must start with http
-        if not href.startswith("http"):
-            continue
-        
-        # Skip excluded domains
-        if _is_excluded_domain(href):
-            st.write(f"  ⏭️ Skipping excluded: {href}")
-            continue
-        
-        # This looks like a potential company website
-        found_links.append(href)
-        st.write(f"  🔗 Found potential homepage: {href}")
-    
-    # Use the first valid link found
-    if found_links:
-        data["homepage"] = found_links[0]
-        st.write(f"  ✅ Using homepage: {data['homepage']}")
-    else:
-        st.warning("  ⚠️ No valid homepage found")
-    
-    # Employees
-    employee_match = re.search(r"(?:Ansatte|Antall ansatte)[:\s]+(\d+)", text)
-    if employee_match:
-        data["employees"] = employee_match.group(1)
-        st.write(f"  ✓ Employees: {data['employees']}")
-    
-    return data
-
 @lru_cache(maxsize=1024)
 def fetch_proff_info(org_number: str) -> dict:
     """
-    Fetch company info from Proff.no using organization number
+    Fetch financial data from Proff.no using organization number.
+    Returns revenue, operating result, result before tax, and total assets for 2024, 2023, 2022.
     """
     st.write("=" * 50)
-    st.write("🚀 FETCHING FROM PROFF.NO")
+    st.write("🚀 FETCHING FINANCIAL DATA FROM PROFF.NO")
     st.write("=" * 50)
     
     if not org_number or not org_number.isdigit():
@@ -231,11 +158,9 @@ def fetch_proff_info(org_number: str) -> dict:
     
     out = {}
     try:
+        # Parse financial data only (no homepage)
         financial_data = _parse_financial_table(soup)
         out.update(financial_data)
-        
-        company_info = _parse_company_info(soup)
-        out.update(company_info)
         
     except Exception as e:
         st.error(f"❌ Parsing error: {e}")
@@ -243,13 +168,13 @@ def fetch_proff_info(org_number: str) -> dict:
         st.code(traceback.format_exc())
     
     st.write("=" * 50)
-    st.write(f"✅ DONE! Fetched {len(out)} fields")
+    st.write(f"✅ DONE! Fetched {len(out)} financial fields")
     st.write("=" * 50)
     
     if out:
         st.json(out)
     else:
-        st.warning("⚠️ No data was extracted")
-        st.info("💡 This company might not have financial data on Proff.no, or the page structure is different than expected.")
+        st.warning("⚠️ No financial data was extracted")
+        st.info("💡 This company might not have financial data on Proff.no")
     
     return out
