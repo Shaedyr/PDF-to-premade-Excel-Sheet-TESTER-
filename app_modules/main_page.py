@@ -7,7 +7,7 @@ from app_modules.company_data import (
     search_brreg_live
 )
 from app_modules.Sheets.Sammendrag.summery_getter import generate_company_summary
-from app_modules.Sheets.Sammendrag.proff_getter_DEBUG import fetch_proff_info  # ADDED: Real Proff.no getter
+from app_modules.Sheets.Sammendrag.proff_getter import fetch_proff_info  # ADDED: Real Proff.no getter
 from app_modules.pdf_parser import extract_fields_from_pdf
 from app_modules.Sheets.excel_filler import fill_excel
 from app_modules.download import download_excel_file
