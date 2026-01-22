@@ -4,30 +4,10 @@ Centralized configuration for all Excel sheets.
 This file imports and aggregates all sheet mappings.
 """
 
-# Import all sheet mappings
+# Import only Sammendrag mapping (the only one that exists)
 from app_modules.Sheets.Sammendrag.mapping import (
     CELL_MAP as SAMMENDRAG_MAP,
     transform_data as transform_sammendrag
-)
-
-from app_modules.Sheets.Alminnelig_ansvar.mapping import (
-    CELL_MAP as ALMINNELIG_ANSVAR_MAP,
-    transform_data as transform_alminnelig_ansvar
-)
-
-from app_modules.Sheets.Fordon.mapping import (
-    CELL_MAP as FORDON_MAP,
-    transform_data as transform_fordon
-)
-
-from app_modules.Sheets.Prosjekt_entreprenør.mapping import (
-    CELL_MAP as PROSJEKT_MAP,
-    transform_data as transform_prosjekt
-)
-
-from app_modules.Sheets.Yrkesskade.mapping import (
-    CELL_MAP as YRKESSKADE_MAP,
-    transform_data as transform_yrkesskade
 )
 
 
@@ -35,20 +15,14 @@ from app_modules.Sheets.Yrkesskade.mapping import (
 # This maps the actual Excel sheet names to their cell mappings
 SHEET_MAPPINGS = {
     "Sammendrag": SAMMENDRAG_MAP,
-    "Alminnelig ansvar": ALMINNELIG_ANSVAR_MAP,
-    "Fordon": FORDON_MAP,
-    "Prosjekt,entreprenør": PROSJEKT_MAP,
-    "Yrkesskade": YRKESSKADE_MAP,
+    # Add other sheets here when you create their mapping files
 }
 
 
 # Master transform functions: sheet name -> transform function
 SHEET_TRANSFORMS = {
     "Sammendrag": transform_sammendrag,
-    "Alminnelig ansvar": transform_alminnelig_ansvar,
-    "Fordon": transform_fordon,
-    "Prosjekt,entreprenør": transform_prosjekt,
-    "Yrkesskade": transform_yrkesskade,
+    # Add other sheets here when you create their mapping files
 }
 
 
