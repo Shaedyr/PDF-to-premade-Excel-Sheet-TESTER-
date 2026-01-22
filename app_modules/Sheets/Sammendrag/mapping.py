@@ -6,11 +6,13 @@ This defines which data fields map to which Excel cells.
 
 # Cell mapping: field_name -> Excel cell reference
 CELL_MAP = {
-    "company_name": "B2",
-    "org_number": "B3",
-    "address": "B4",
-    "post_nr": "B5",
-    "city": "B6",
+    "company_name": "B3",
+    "org_number": "B4",
+    "address": "B5",
+    "post_nr": "B6",
+    "city": "B7",
+    "homepage": "B11",
+    
     "sum_driftsinnt_2024": "D3",
     "sum_driftsinnt_2023": "E3",
     "sum_driftsinnt_2022": "F3",
@@ -23,11 +25,8 @@ CELL_MAP = {
     "sum_eiendeler_2024": "D6",
     "sum_eiendeler_2023": "E6",
     "sum_eiendeler_2022": "F6",
-    "homepage": "B10",
-    "current_insurer": "B11",
-    "tender_deadline": "B12",
-    "economy_summary": "B13",
-    "total_pris_pr_aar": "H40",
+    
+    "current_insurer": "B12",
 }
 
 
