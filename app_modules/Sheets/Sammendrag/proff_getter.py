@@ -1,6 +1,6 @@
-# app_modules/Sheets/Sammendrag/proff_getter_FIXED.py
+# app_modules/Sheets/Sammendrag/proff_getter.py
 """
-FIXED Proff getter - uses updated Proff.no URLs
+Proff.no getter with improved homepage detection
 """
 
 import re
@@ -13,8 +13,25 @@ import streamlit as st
 logger = logging.getLogger(__name__)
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
 
-# UPDATED: Proff.no changed their URLs
 BASE_URL = "https://www.proff.no"
+
+# Domains to EXCLUDE when looking for company homepage
+EXCLUDED_DOMAINS = [
+    'proff.no',
+    'finn.no', 
+    'nav.no',
+    'brreg.no',
+    'google.com',
+    'facebook.com',
+    'linkedin.com',
+    'career.',  # Career sites
+    'jobs.',    # Job sites
+    'rekruttering.',
+    'stillinger.',
+    'ennento.com',  # Recruitment platform
+    'jobbnorge.no',
+    'arbeidsplassen.no',
+]
 
 def _safe_get(url, params=None, timeout=10):
     try:
@@ -31,6 +48,14 @@ def _safe_get(url, params=None, timeout=10):
     except Exception as e:
         st.error(f"❌ HTTP error: {e}")
     return None
+
+def _is_excluded_domain(url):
+    """Check if URL contains excluded domains"""
+    url_lower = url.lower()
+    for excluded in EXCLUDED_DOMAINS:
+        if excluded in url_lower:
+            return True
+    return False
 
 def _extract_org_no(text):
     m = re.search(r"\b(\d{9})\b", text)
@@ -117,20 +142,39 @@ def _parse_financial_table(soup):
 
 def _parse_company_info(soup):
     """
-    Extract company info
+    Extract company info with improved homepage detection
     """
     st.write("🏢 Parsing company info...")
     
     data = {}
     text = soup.get_text(" ", strip=True)
     
-    # Website - look for http links
+    # Website - look for http links, but exclude career sites, job sites, etc.
+    st.write("🔍 Looking for company homepage...")
+    
+    found_links = []
     for link in soup.find_all("a", href=True):
         href = link.get("href", "")
-        if href.startswith("http") and "proff.no" not in href:
-            data["homepage"] = href
-            st.write(f"  ✓ Homepage: {href}")
-            break
+        
+        # Must start with http
+        if not href.startswith("http"):
+            continue
+        
+        # Skip excluded domains
+        if _is_excluded_domain(href):
+            st.write(f"  ⏭️ Skipping excluded: {href}")
+            continue
+        
+        # This looks like a potential company website
+        found_links.append(href)
+        st.write(f"  🔗 Found potential homepage: {href}")
+    
+    # Use the first valid link found
+    if found_links:
+        data["homepage"] = found_links[0]
+        st.write(f"  ✅ Using homepage: {data['homepage']}")
+    else:
+        st.warning("  ⚠️ No valid homepage found")
     
     # Employees
     employee_match = re.search(r"(?:Ansatte|Antall ansatte)[:\s]+(\d+)", text)
@@ -146,7 +190,7 @@ def fetch_proff_info(org_number: str) -> dict:
     Fetch company info from Proff.no using organization number
     """
     st.write("=" * 50)
-    st.write("🚀 FETCHING FROM PROFF.NO (FIXED VERSION)")
+    st.write("🚀 FETCHING FROM PROFF.NO")
     st.write("=" * 50)
     
     if not org_number or not org_number.isdigit():
