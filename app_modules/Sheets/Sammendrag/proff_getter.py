@@ -1,11 +1,11 @@
-# app_modules/Sheets/Sammendrag/proff_getter_SELENIUM.py
+# app_modules/Sheets/Sammendrag/proff_getter.py
 """
-Selenium-based Proff.no scraper - handles JavaScript
-Requires: selenium, webdriver-manager
+Selenium-based Proff.no scraper - Streamlit Cloud compatible
 """
 
 import re
 import time
+import os
 from functools import lru_cache
 import streamlit as st
 
@@ -17,16 +17,57 @@ try:
     from selenium.webdriver.support import expected_conditions as EC
     from selenium.webdriver.chrome.options import Options
     from selenium.webdriver.chrome.service import Service
-    from webdriver_manager.chrome import ChromeDriverManager
     SELENIUM_AVAILABLE = True
 except ImportError:
     SELENIUM_AVAILABLE = False
 
 
+def _get_chrome_options():
+    """Get Chrome options configured for Streamlit Cloud"""
+    chrome_options = Options()
+    
+    # Essential options for headless mode
+    chrome_options.add_argument("--headless")
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--disable-dev-shm-usage")
+    chrome_options.add_argument("--disable-gpu")
+    chrome_options.add_argument("--disable-features=NetworkService")
+    chrome_options.add_argument("--window-size=1920x1080")
+    chrome_options.add_argument("--disable-features=VizDisplayCompositor")
+    
+    return chrome_options
+
+
+def _get_webdriver():
+    """Initialize webdriver - works on both local and Streamlit Cloud"""
+    chrome_options = _get_chrome_options()
+    
+    # Try to use chromium-browser (for Streamlit Cloud/Linux)
+    chromium_path = "/usr/bin/chromium-browser"
+    if os.path.exists(chromium_path):
+        chrome_options.binary_location = chromium_path
+        st.write("✅ Using Chromium browser")
+        
+        # Use chromium driver
+        chromium_driver = "/usr/bin/chromedriver"
+        if os.path.exists(chromium_driver):
+            service = Service(chromium_driver)
+            return webdriver.Chrome(service=service, options=chrome_options)
+    
+    # Fallback to regular Chrome with webdriver-manager
+    try:
+        from webdriver_manager.chrome import ChromeDriverManager
+        service = Service(ChromeDriverManager().install())
+        return webdriver.Chrome(service=service, options=chrome_options)
+    except Exception as e:
+        st.error(f"Could not initialize Chrome: {e}")
+        raise
+
+
 @lru_cache(maxsize=1024)
 def fetch_proff_info(org_number: str) -> dict:
     """
-    Fetch financial data from Proff.no using Selenium (handles JavaScript)
+    Fetch financial data from Proff.no using Selenium
     """
     st.write("=" * 50)
     st.write("🚀 FETCHING FROM PROFF.NO WITH SELENIUM")
@@ -35,13 +76,16 @@ def fetch_proff_info(org_number: str) -> dict:
     if not SELENIUM_AVAILABLE:
         st.error("❌ Selenium not installed!")
         st.info("""
-        To use automated data fetching, install Selenium:
-        
+        Install Selenium:
         ```
         pip install selenium webdriver-manager
         ```
         
-        Then restart the app.
+        For Streamlit Cloud: Add `packages.txt` file with:
+        ```
+        chromium
+        chromium-driver
+        ```
         """)
         return {}
     
@@ -53,18 +97,9 @@ def fetch_proff_info(org_number: str) -> dict:
     
     driver = None
     try:
-        # Set up Chrome in headless mode
+        # Set up browser
         st.write("🌐 Setting up browser...")
-        chrome_options = Options()
-        chrome_options.add_argument("--headless")  # Run without opening window
-        chrome_options.add_argument("--no-sandbox")
-        chrome_options.add_argument("--disable-dev-shm-usage")
-        chrome_options.add_argument("--disable-gpu")
-        
-        # Initialize driver
-        service = Service(ChromeDriverManager().install())
-        driver = webdriver.Chrome(service=service, options=chrome_options)
-        
+        driver = _get_webdriver()
         st.write("✅ Browser ready")
         
         # Go to Proff.no search
@@ -72,54 +107,61 @@ def fetch_proff_info(org_number: str) -> dict:
         st.write(f"📄 Loading: {search_url}")
         driver.get(search_url)
         
-        # Wait for search results to load (JavaScript)
+        # Wait for search results
         st.write("⏳ Waiting for search results...")
-        time.sleep(3)  # Give JavaScript time to load
+        time.sleep(5)  # Give more time for JavaScript
         
         # Look for company link
         st.write("🔎 Looking for company link...")
-        try:
-            # Try to find the first company result link
-            company_link = WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, "a[href*='/selskap/']"))
-            )
+        
+        # Try multiple selectors
+        selectors = [
+            "a[href*='/selskap/']",
+            "a[href*='/foretak/']",
+            ".company-link",
+            ".search-result a"
+        ]
+        
+        company_url = None
+        for selector in selectors:
+            try:
+                links = driver.find_elements(By.CSS_SELECTOR, selector)
+                if links:
+                    company_url = links[0].get_attribute("href")
+                    st.success(f"✅ Found company: {company_url}")
+                    break
+            except:
+                continue
+        
+        if not company_url:
+            st.error("❌ Could not find company link")
             
-            company_url = company_link.get_attribute("href")
-            st.success(f"✅ Found company: {company_url}")
-            
-            # Click the link
-            st.write("🖱️ Clicking company link...")
-            driver.get(company_url)
-            
-            # Wait for page to load
-            time.sleep(3)
-            
-            st.write("📊 Parsing financial data...")
-            
-            # Get page source
-            page_source = driver.page_source
-            
-            # Parse financial data from the page
-            data = _parse_page_source(page_source)
-            
-            if data:
-                st.write("=" * 50)
-                st.write(f"✅ DONE! Fetched {len(data)} financial fields")
-                st.write("=" * 50)
-                st.json(data)
-            else:
-                st.warning("⚠️ No financial data found")
-            
-            return data
-            
-        except Exception as e:
-            st.error(f"❌ Could not find company link: {e}")
-            
-            # Show what's on the page
-            with st.expander("🔍 DEBUG: Page source sample"):
+            # Show page for debugging
+            with st.expander("🔍 DEBUG: Page source"):
                 st.code(driver.page_source[:2000])
             
             return {}
+        
+        # Navigate to company page
+        st.write("🖱️ Loading company page...")
+        driver.get(company_url)
+        time.sleep(3)
+        
+        st.write("📊 Parsing financial data...")
+        
+        # Get page source and parse
+        page_source = driver.page_source
+        data = _parse_page_source(page_source)
+        
+        if data:
+            st.write("=" * 50)
+            st.write(f"✅ DONE! Fetched {len(data)} financial fields")
+            st.write("=" * 50)
+            st.json(data)
+        else:
+            st.warning("⚠️ No financial data found")
+        
+        return data
         
     except Exception as e:
         st.error(f"❌ Selenium error: {e}")
@@ -128,32 +170,31 @@ def fetch_proff_info(org_number: str) -> dict:
         return {}
         
     finally:
-        # Always close the browser
+        # Always close browser
         if driver:
-            driver.quit()
-            st.write("🔒 Browser closed")
+            try:
+                driver.quit()
+                st.write("🔒 Browser closed")
+            except:
+                pass
 
 
 def _parse_page_source(html: str) -> dict:
-    """
-    Parse financial data from Proff.no page HTML
-    """
+    """Parse financial data from page HTML"""
     from bs4 import BeautifulSoup
     
     soup = BeautifulSoup(html, "html.parser")
     data = {}
     
-    # Find tables
     tables = soup.find_all("table")
     st.write(f"📊 Found {len(tables)} tables")
     
-    # Look for financial table
     for table in tables:
         table_text = table.get_text().lower()
         if any(word in table_text for word in ["resultat", "inntekt", "eiendel", "driftsinntekt"]):
             st.write("✅ Found financial table")
             
-            # Extract years from headers
+            # Extract years
             years = []
             for th in table.find_all("th"):
                 year_match = re.search(r"(202\d)", th.get_text())
@@ -194,6 +235,6 @@ def _parse_page_source(html: str) -> dict:
                         data[f"sum_eiendeler_{year}"] = clean_value
                         st.write(f"  ✓ Total assets {year}: {clean_value}")
             
-            break  # Found financial table, no need to check others
+            break
     
     return data
