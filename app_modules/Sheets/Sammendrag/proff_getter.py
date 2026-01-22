@@ -1,6 +1,6 @@
 # app_modules/Sheets/Sammendrag/proff_getter.py
 """
-Proff.no getter - properly navigates from search to company page
+Proff.no getter - tries multiple URL patterns directly
 """
 
 import re
@@ -11,80 +11,55 @@ from bs4 import BeautifulSoup
 import streamlit as st
 
 logger = logging.getLogger(__name__)
-HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+}
 
 BASE_URL = "https://www.proff.no"
 
-def _safe_get(url, params=None, timeout=10):
+def _safe_get(url, timeout=10):
     try:
         st.write(f"🌐 Fetching: {url}")
-        r = requests.get(url, params=params, headers=HEADERS, timeout=timeout)
+        r = requests.get(url, headers=HEADERS, timeout=timeout, allow_redirects=True)
         st.write(f"📊 Status: {r.status_code}")
         
         if r.status_code == 200:
-            st.success(f"✅ Success!")
-            return r.text
+            st.success(f"✅ Success! Final URL: {r.url}")
+            return r.text, r.url
         else:
             st.error(f"❌ Error {r.status_code}")
             
     except Exception as e:
         st.error(f"❌ HTTP error: {e}")
-    return None
+    return None, None
 
-def _find_company_page_from_search(org_number):
+def _try_url_patterns(org_number, company_name=None):
     """
-    Search for company and extract the actual company page URL
+    Try multiple URL patterns to find the company page
     """
-    st.write(f"🔍 Searching for org number: {org_number}")
+    st.write("🔗 Trying different URL patterns...")
     
-    # Try the search URL
-    search_url = f"{BASE_URL}/bransjes%C3%B8k?q={org_number}"
-    html = _safe_get(search_url)
-    
-    if not html:
-        return None
-    
-    soup = BeautifulSoup(html, "html.parser")
-    
-    st.write("🔎 Looking for company links in search results...")
-    
-    # Try multiple patterns to find company links
-    patterns_to_try = [
-        re.compile(r"/roller/\d+"),
-        re.compile(r"/selskap/[^/]+/\d+"),
-        re.compile(r"/foretak/[^/]+/\d+"),
+    # Pattern 1: Direct org number
+    patterns = [
+        f"{BASE_URL}/selskap/-/{org_number}",
+        f"{BASE_URL}/foretak/-/{org_number}",
+        f"{BASE_URL}/roller/{org_number}",
+        f"{BASE_URL}/bransje/org/{org_number}",
     ]
     
-    for pattern in patterns_to_try:
-        links = soup.find_all("a", href=pattern)
-        st.write(f"📌 Pattern {pattern.pattern}: found {len(links)} links")
+    for pattern in patterns:
+        st.write(f"📍 Trying: {pattern}")
+        html, final_url = _safe_get(pattern)
         
-        if links:
-            # Show all found links
-            for i, link in enumerate(links[:5]):  # Show first 5
-                href = link.get("href")
-                link_text = link.get_text(strip=True)
-                st.write(f"  {i+1}. Link: {href} - Text: {link_text}")
-            
-            # Use the first link
-            company_href = links[0].get("href")
-            
-            # Make sure it's a full URL
-            if company_href.startswith("/"):
-                company_href = BASE_URL + company_href
-            
-            st.success(f"✅ Found company page: {company_href}")
-            return company_href
+        if html:
+            # Check if this looks like a valid company page
+            if "nøkkeltall" in html.lower() or "regnskap" in html.lower() or "resultat" in html.lower():
+                st.success(f"✅ Found valid company page!")
+                return html, final_url
+            else:
+                st.warning(f"⚠️ Got a page but doesn't look like company page")
     
-    st.error("❌ No company links found in search results")
-    
-    # DEBUG: Show what links ARE there
-    with st.expander("🔍 DEBUG: All links found on search page"):
-        all_links = soup.find_all("a", href=True)
-        for link in all_links[:20]:  # Show first 20 links
-            st.write(f"- {link.get('href')} → {link.get_text(strip=True)[:50]}")
-    
-    return None
+    return None, None
 
 def _parse_financial_table(soup):
     """
@@ -97,30 +72,47 @@ def _parse_financial_table(soup):
     st.write(f"📊 Found {len(tables)} tables")
     
     if not tables:
-        st.warning("⚠️ No tables found on page")
+        st.warning("⚠️ No tables found")
+        
+        # Try to find financial data in divs or other structures
+        st.write("🔍 Looking for financial data in other structures...")
+        text = soup.get_text()
+        
+        # Try to find numbers with context
+        patterns = {
+            "sum_driftsinnt": r"(?:driftsinntekt|omsetning)[^\d]*([\d\s]+)",
+            "driftsresultat": r"driftsresultat[^\d]*([\d\s\-]+)",
+            "ord_res_f_skatt": r"resultat.*?skatt[^\d]*([\d\s\-]+)",
+            "sum_eiendeler": r"(?:sum\s+)?eiendel[^\d]*([\d\s]+)"
+        }
+        
+        for key, pattern in patterns.items():
+            matches = re.findall(pattern, text.lower())
+            if matches:
+                st.write(f"  Found {key}: {matches[:3]}")
+        
         return data
     
     # Try to find the financial table
     financial_table = None
     for idx, table in enumerate(tables):
-        # Look for table with financial keywords
         table_text = table.get_text().lower()
-        if any(word in table_text for word in ["resultat", "inntekt", "eiendel", "driftsinntekt"]):
+        if any(word in table_text for word in ["resultat", "inntekt", "eiendel", "driftsinntekt", "regnskap"]):
             financial_table = table
-            st.write(f"✅ Found financial table (table #{idx+1})")
+            st.write(f"✅ Found financial table (#{idx+1})")
             break
     
     if not financial_table:
         st.warning("⚠️ No financial table found")
         
-        # DEBUG: Show what's in the tables
-        with st.expander("🔍 DEBUG: Table contents"):
-            for idx, table in enumerate(tables[:3]):  # First 3 tables
+        # Show what's in tables
+        with st.expander("🔍 DEBUG: Show table contents"):
+            for idx, table in enumerate(tables[:3]):
                 st.write(f"**Table {idx+1}:**")
-                rows = table.find_all("tr")[:5]  # First 5 rows
-                for row in rows:
+                for row in table.find_all("tr")[:5]:
                     cells = [c.get_text(strip=True) for c in row.find_all(["th", "td"])]
-                    st.write(cells)
+                    if cells:
+                        st.write(cells)
         
         return data
     
@@ -131,10 +123,11 @@ def _parse_financial_table(soup):
         if year_match:
             years.append(year_match.group(1))
     
-    years = list(dict.fromkeys(years))  # Remove duplicates, keep order
-    st.write(f"📅 Years found: {years}")
+    years = list(dict.fromkeys(years))
+    st.write(f"📅 Years: {years}")
     
     # Parse rows
+    row_count = 0
     for row in financial_table.find_all("tr"):
         cells = row.find_all(["th", "td"])
         if len(cells) < 2:
@@ -150,59 +143,55 @@ def _parse_financial_table(soup):
             if not value or value == "-":
                 continue
             
-            # Clean the value
             clean_value = re.sub(r"[^\d\-,]", "", value.replace(" ", ""))
             
-            # Match financial fields
-            if "sum driftsinntekt" in label or "driftsinntekter" in label:
+            if "sum driftsinntekt" in label or "driftsinntekter" in label or "omsetning" in label:
                 data[f"sum_driftsinnt_{year}"] = clean_value
                 st.write(f"  ✓ Revenue {year}: {clean_value}")
+                row_count += 1
             elif "driftsresultat" in label and "før" not in label:
                 data[f"driftsresultat_{year}"] = clean_value
                 st.write(f"  ✓ Operating result {year}: {clean_value}")
-            elif "resultat før skatt" in label or "ordinært resultat før skatt" in label:
+                row_count += 1
+            elif "resultat før skatt" in label or "ordinært resultat" in label:
                 data[f"ord_res_f_skatt_{year}"] = clean_value
                 st.write(f"  ✓ Result before tax {year}: {clean_value}")
-            elif "sum eiendeler" in label:
+                row_count += 1
+            elif "sum eiendeler" in label or "totale eiendeler" in label:
                 data[f"sum_eiendeler_{year}"] = clean_value
                 st.write(f"  ✓ Total assets {year}: {clean_value}")
+                row_count += 1
+    
+    if row_count == 0:
+        st.warning("⚠️ No financial data extracted from table")
     
     return data
 
 @lru_cache(maxsize=1024)
 def fetch_proff_info(org_number: str) -> dict:
     """
-    Fetch financial data from Proff.no using organization number.
-    Returns revenue, operating result, result before tax, and total assets for 2024, 2023, 2022.
+    Fetch financial data from Proff.no
     """
     st.write("=" * 50)
-    st.write("🚀 FETCHING FINANCIAL DATA FROM PROFF.NO")
+    st.write("🚀 FETCHING FROM PROFF.NO")
     st.write("=" * 50)
     
     if not org_number or not org_number.isdigit():
         st.error("❌ Invalid org number")
         return {}
     
-    # Find the company page URL via search
-    company_url = _find_company_page_from_search(org_number)
-    
-    if not company_url:
-        st.error("❌ Could not find company page")
-        return {}
-    
-    # Now fetch the ACTUAL company page
-    st.write("📄 Fetching company page...")
-    html = _safe_get(company_url)
+    # Try different URL patterns
+    html, final_url = _try_url_patterns(org_number)
     
     if not html:
-        st.error("❌ Could not fetch company page")
+        st.error("❌ Could not find company page")
+        st.info("💡 Try manually visiting: https://www.proff.no and searching for org number: " + org_number)
         return {}
     
     soup = BeautifulSoup(html, "html.parser")
     
     out = {}
     try:
-        # Parse financial data
         financial_data = _parse_financial_table(soup)
         out.update(financial_data)
         
@@ -212,13 +201,15 @@ def fetch_proff_info(org_number: str) -> dict:
         st.code(traceback.format_exc())
     
     st.write("=" * 50)
-    st.write(f"✅ DONE! Fetched {len(out)} financial fields")
+    st.write(f"✅ DONE! Fetched {len(out)} fields")
     st.write("=" * 50)
     
     if out:
         st.json(out)
     else:
-        st.warning("⚠️ No financial data was extracted")
-        st.info("💡 This company might not have financial data on Proff.no")
+        st.warning("⚠️ No financial data extracted")
+        
+        # Suggest manual check
+        st.info(f"💡 Please check manually: https://www.proff.no (search for {org_number})")
     
     return out
