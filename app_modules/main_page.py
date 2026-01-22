@@ -7,25 +7,25 @@ from app_modules.company_data import (
     search_brreg_live
 )
 from app_modules.Sheets.Sammendrag.summery_getter import generate_company_summary
-from app_modules.Sheets.Sammendrag.proff_getter import fetch_proff_info  # ADDED: Real Proff.no getter
+from app_modules.Sheets.Sammendrag.manual_financial_form import show_financial_entry_form  # Manual form!
 from app_modules.pdf_parser import extract_fields_from_pdf
 from app_modules.Sheets.excel_filler import fill_excel
 from app_modules.download import download_excel_file
 
 
 def run():
-    st.title("📄 PDF → Excel (Brønnøysund,Proff)")
-    st.caption("Hent selskapsinformasjon og oppdater Excel automatisk")
+    st.title("📄 PDF → Excel (BRREG, Manual Entry)")
+    st.caption("Fetch company information and update Excel automatically")
     st.divider()
 
     # ---------------------------------------------------------
     # STEP 1: SEARCH BAR + RESULT DROPDOWN
     # ---------------------------------------------------------
-    st.subheader("🔍 Finn selskap")
+    st.subheader("🔍 Find company")
 
     query = st.text_input(
-        "Søk etter selskap",
-        placeholder="Skriv minst 2 bokstaver for å søke"
+        "Search for company",
+        placeholder="Type at least 2 characters to search"
     )
 
     selected_company_raw = None
@@ -44,10 +44,10 @@ def run():
         ]
 
     selected_label = st.selectbox(
-        "Velg selskap",
+        "Select company",
         company_options,
         index=None,
-        placeholder="Velg et selskap"
+        placeholder="Select a company"
     )
 
     if selected_label:
@@ -55,10 +55,10 @@ def run():
         selected_company_raw = results[idx]
 
     # PDF upload (always outside the IF block)
-    pdf_bytes = st.file_uploader("Last opp PDF", type=["pdf"])
+    pdf_bytes = st.file_uploader("Upload PDF", type=["pdf"])
 
     if not selected_company_raw:
-        st.info("Velg et selskap for å fortsette.")
+        st.info("Select a company to continue.")
         return
 
     # ---------------------------------------------------------
@@ -83,26 +83,17 @@ def run():
     company_data = format_company_data(raw_company_data)
 
     # ---------------------------------------------------------
-    # STEP 3B: FETCH PROFF.NO FINANCIAL DATA
+    # STEP 3B: MANUAL FINANCIAL DATA ENTRY
     # ---------------------------------------------------------
-    st.info("🔍 Henter finansiell data fra Proff.no...")
-    proff_data = {}
+    st.divider()
     
-    if org_number:
-        try:
-            proff_data = fetch_proff_info(org_number)
-            if proff_data:
-                st.success(f"✅ Hentet {len(proff_data)} felt fra Proff.no")
-            else:
-                st.warning("⚠️ Kunne ikke hente data fra Proff.no")
-        except Exception as e:
-            st.warning(f"⚠️ Feil ved henting fra Proff.no: {e}")
+    # Show the manual entry form
+    financial_data = show_financial_entry_form()
+    
+    # Merge financial data with company data
+    company_data.update(financial_data)
 
-    # Merge Proff data with company data
-    # Proff data can fill in missing fields OR add new fields (like financials)
-    for key, value in proff_data.items():
-        if value:  # Only add non-empty values
-            company_data[key] = value
+    st.divider()
 
     # ---------------------------------------------------------
     # STEP 4: SUMMARY
@@ -118,45 +109,44 @@ def run():
     # MERGE FIELDS
     # ---------------------------------------------------------
     merged_fields = {}
-    merged_fields.update(company_data)  # BRREG + Proff.no data
-    merged_fields.update(pdf_fields)    # PDF data (overrides if conflicts)
+    merged_fields.update(company_data)
+    merged_fields.update(pdf_fields)
     merged_fields["company_summary"] = summary_text
 
     st.divider()
-    st.subheader("📋 Ekstraherte data")
+    st.subheader("📋 Extracted data")
 
     col_left, col_right = st.columns(2)
 
     with col_left:
-        st.write("**Selskapsnavn:**", merged_fields.get("company_name", ""))
-        st.write("**Organisasjonsnummer:**", merged_fields.get("org_number", ""))
-        st.write("**Adresse:**", merged_fields.get("address", ""))
-        st.write("**Postnummer:**", merged_fields.get("post_nr", ""))
-        st.write("**Poststed:**", merged_fields.get("city", ""))
-        st.write("**Antall ansatte:**", merged_fields.get("employees", ""))
-        st.write("**Hjemmeside:**", merged_fields.get("homepage", ""))
-        st.write("**NACE-kode:**", merged_fields.get("nace_code", ""))
-        st.write("**NACE-beskrivelse:**", merged_fields.get("nace_description", ""))
+        st.write("**Company name:**", merged_fields.get("company_name", ""))
+        st.write("**Organization number:**", merged_fields.get("org_number", ""))
+        st.write("**Address:**", merged_fields.get("address", ""))
+        st.write("**Postal code:**", merged_fields.get("post_nr", ""))
+        st.write("**City:**", merged_fields.get("city", ""))
+        st.write("**Employees:**", merged_fields.get("employees", ""))
+        st.write("**NACE code:**", merged_fields.get("nace_code", ""))
+        st.write("**NACE description:**", merged_fields.get("nace_description", ""))
 
     with col_right:
-        st.markdown("**Sammendrag (går i 'Om oss' / 'Skriv her' celle):**")
-        st.info(summary_text or "Ingen tilgjengelig selskapsbeskrivelse.")
+        st.markdown("**Summary:**")
+        st.info(summary_text or "No company description available.")
         
-        # Show financial data if available
-        if proff_data:
-            st.markdown("**Finansiell data (fra Proff.no):**")
+        # Show financial data if entered
+        if financial_data:
+            st.markdown("**Financial data (manually entered):**")
             if merged_fields.get("sum_driftsinnt_2024"):
-                st.write("Driftsinntekter 2024:", merged_fields.get("sum_driftsinnt_2024"))
+                st.write("Revenue 2024:", merged_fields.get("sum_driftsinnt_2024"))
             if merged_fields.get("driftsresultat_2024"):
-                st.write("Driftsresultat 2024:", merged_fields.get("driftsresultat_2024"))
+                st.write("Operating result 2024:", merged_fields.get("driftsresultat_2024"))
 
     st.divider()
 
     # ---------------------------------------------------------
     # STEP 6 + 7: PROCESS & DOWNLOAD
     # ---------------------------------------------------------
-    if st.button("🚀 Prosesser & Oppdater Excel", use_container_width=True):
-        with st.spinner("Behandler og fyller inn Excel..."):
+    if st.button("🚀 Process & Update Excel", use_container_width=True):
+        with st.spinner("Processing and filling Excel..."):
             excel_bytes = fill_excel(
                 template_bytes=template_bytes,
                 field_values=merged_fields,
@@ -165,5 +155,5 @@ def run():
 
         download_excel_file(
             excel_bytes=excel_bytes,
-            company_name=merged_fields.get("company_name", "Selskap")
+            company_name=merged_fields.get("company_name", "Company")
         )
