@@ -1,6 +1,6 @@
 # app_modules/Sheets/Sammendrag/proff_getter.py
 """
-Proff.no getter - fetches financial data only (no homepage)
+Proff.no getter - properly navigates from search to company page
 """
 
 import re
@@ -31,12 +31,60 @@ def _safe_get(url, params=None, timeout=10):
         st.error(f"❌ HTTP error: {e}")
     return None
 
-def _build_company_url(org_number):
+def _find_company_page_from_search(org_number):
     """
-    Build direct company page URL using org number.
-    Proff.no format: /roller/[org_number]
+    Search for company and extract the actual company page URL
     """
-    return f"{BASE_URL}/roller/{org_number}"
+    st.write(f"🔍 Searching for org number: {org_number}")
+    
+    # Try the search URL
+    search_url = f"{BASE_URL}/bransjes%C3%B8k?q={org_number}"
+    html = _safe_get(search_url)
+    
+    if not html:
+        return None
+    
+    soup = BeautifulSoup(html, "html.parser")
+    
+    st.write("🔎 Looking for company links in search results...")
+    
+    # Try multiple patterns to find company links
+    patterns_to_try = [
+        re.compile(r"/roller/\d+"),
+        re.compile(r"/selskap/[^/]+/\d+"),
+        re.compile(r"/foretak/[^/]+/\d+"),
+    ]
+    
+    for pattern in patterns_to_try:
+        links = soup.find_all("a", href=pattern)
+        st.write(f"📌 Pattern {pattern.pattern}: found {len(links)} links")
+        
+        if links:
+            # Show all found links
+            for i, link in enumerate(links[:5]):  # Show first 5
+                href = link.get("href")
+                link_text = link.get_text(strip=True)
+                st.write(f"  {i+1}. Link: {href} - Text: {link_text}")
+            
+            # Use the first link
+            company_href = links[0].get("href")
+            
+            # Make sure it's a full URL
+            if company_href.startswith("/"):
+                company_href = BASE_URL + company_href
+            
+            st.success(f"✅ Found company page: {company_href}")
+            return company_href
+    
+    st.error("❌ No company links found in search results")
+    
+    # DEBUG: Show what links ARE there
+    with st.expander("🔍 DEBUG: All links found on search page"):
+        all_links = soup.find_all("a", href=True)
+        for link in all_links[:20]:  # Show first 20 links
+            st.write(f"- {link.get('href')} → {link.get_text(strip=True)[:50]}")
+    
+    return None
 
 def _parse_financial_table(soup):
     """
@@ -49,20 +97,31 @@ def _parse_financial_table(soup):
     st.write(f"📊 Found {len(tables)} tables")
     
     if not tables:
+        st.warning("⚠️ No tables found on page")
         return data
     
     # Try to find the financial table
     financial_table = None
-    for table in tables:
+    for idx, table in enumerate(tables):
         # Look for table with financial keywords
         table_text = table.get_text().lower()
         if any(word in table_text for word in ["resultat", "inntekt", "eiendel", "driftsinntekt"]):
             financial_table = table
-            st.write("✅ Found financial table")
+            st.write(f"✅ Found financial table (table #{idx+1})")
             break
     
     if not financial_table:
         st.warning("⚠️ No financial table found")
+        
+        # DEBUG: Show what's in the tables
+        with st.expander("🔍 DEBUG: Table contents"):
+            for idx, table in enumerate(tables[:3]):  # First 3 tables
+                st.write(f"**Table {idx+1}:**")
+                rows = table.find_all("tr")[:5]  # First 5 rows
+                for row in rows:
+                    cells = [c.get_text(strip=True) for c in row.find_all(["th", "td"])]
+                    st.write(cells)
+        
         return data
     
     # Extract years
@@ -124,41 +183,26 @@ def fetch_proff_info(org_number: str) -> dict:
         st.error("❌ Invalid org number")
         return {}
     
-    # Try direct company page URL
-    url = _build_company_url(org_number)
-    st.write(f"🔗 Company page: {url}")
+    # Find the company page URL via search
+    company_url = _find_company_page_from_search(org_number)
     
-    html = _safe_get(url)
+    if not company_url:
+        st.error("❌ Could not find company page")
+        return {}
+    
+    # Now fetch the ACTUAL company page
+    st.write("📄 Fetching company page...")
+    html = _safe_get(company_url)
     
     if not html:
         st.error("❌ Could not fetch company page")
-        
-        # Try alternative: search by org number
-        st.write("🔄 Trying alternative method...")
-        search_url = f"{BASE_URL}/bransjes%C3%B8k?q={org_number}"
-        st.write(f"🔗 Search URL: {search_url}")
-        
-        html = _safe_get(search_url)
-        if not html:
-            return {}
-        
-        # Try to find company link in search results
-        soup = BeautifulSoup(html, "html.parser")
-        company_link = soup.find("a", href=re.compile(r"/roller/\d+"))
-        
-        if company_link:
-            new_url = BASE_URL + company_link.get("href")
-            st.write(f"✅ Found company link: {new_url}")
-            html = _safe_get(new_url)
-    
-    if not html:
         return {}
     
     soup = BeautifulSoup(html, "html.parser")
     
     out = {}
     try:
-        # Parse financial data only (no homepage)
+        # Parse financial data
         financial_data = _parse_financial_table(soup)
         out.update(financial_data)
         
