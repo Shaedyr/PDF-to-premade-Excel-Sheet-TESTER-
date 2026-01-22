@@ -1,9 +1,10 @@
 # app_modules/Sheets/Sammendrag/proff_getter.py
 """
-Proff.no getter - tries multiple URL patterns directly
+Proff.no getter - extracts unique company ID from search results
 """
 
 import re
+import json
 import logging
 from functools import lru_cache
 import requests
@@ -12,7 +13,9 @@ import streamlit as st
 
 logger = logging.getLogger(__name__)
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.5",
 }
 
 BASE_URL = "https://www.proff.no"
@@ -24,7 +27,7 @@ def _safe_get(url, timeout=10):
         st.write(f"📊 Status: {r.status_code}")
         
         if r.status_code == 200:
-            st.success(f"✅ Success! Final URL: {r.url}")
+            st.success(f"✅ Success!")
             return r.text, r.url
         else:
             st.error(f"❌ Error {r.status_code}")
@@ -33,33 +36,115 @@ def _safe_get(url, timeout=10):
         st.error(f"❌ HTTP error: {e}")
     return None, None
 
-def _try_url_patterns(org_number, company_name=None):
+def _extract_company_id_from_search(org_number):
     """
-    Try multiple URL patterns to find the company page
+    Extract the unique company ID from search results.
+    The ID is in the format like 'IF5ITC407TR'
     """
-    st.write("🔗 Trying different URL patterns...")
+    st.write(f"🔍 Searching for company ID for org: {org_number}")
     
-    # Pattern 1: Direct org number
-    patterns = [
-        f"{BASE_URL}/selskap/-/{org_number}",
-        f"{BASE_URL}/foretak/-/{org_number}",
-        f"{BASE_URL}/roller/{org_number}",
-        f"{BASE_URL}/bransje/org/{org_number}",
-    ]
+    # Try the search
+    search_url = f"{BASE_URL}/bransjesøk?q={org_number}"
+    html, final_url = _safe_get(search_url)
     
-    for pattern in patterns:
-        st.write(f"📍 Trying: {pattern}")
-        html, final_url = _safe_get(pattern)
+    if not html:
+        return None
+    
+    st.write("🔎 Looking for company ID in page source...")
+    
+    # Look for the unique ID pattern in HTML
+    # Pattern: IF followed by alphanumeric, usually in URLs like /selskap/.../IF5ITC407TR
+    id_pattern = re.compile(r'/selskap/[^/]+/[^/]+/[^/]+/([A-Z0-9]+)')
+    
+    matches = id_pattern.findall(html)
+    
+    if matches:
+        st.write(f"📌 Found {len(matches)} potential IDs:")
+        for match in matches[:5]:
+            st.write(f"  - {match}")
         
-        if html:
-            # Check if this looks like a valid company page
-            if "nøkkeltall" in html.lower() or "regnskap" in html.lower() or "resultat" in html.lower():
-                st.success(f"✅ Found valid company page!")
-                return html, final_url
-            else:
-                st.warning(f"⚠️ Got a page but doesn't look like company page")
+        # Use the first one
+        company_id = matches[0]
+        st.success(f"✅ Using company ID: {company_id}")
+        return company_id
     
-    return None, None
+    # Try alternative: look in script tags for JSON data
+    st.write("🔍 Looking in script tags...")
+    soup = BeautifulSoup(html, "html.parser")
+    
+    for script in soup.find_all("script"):
+        script_text = script.string
+        if script_text and org_number in script_text:
+            st.write("📌 Found org number in script tag")
+            
+            # Try to extract ID from the script
+            matches = id_pattern.findall(script_text)
+            if matches:
+                company_id = matches[0]
+                st.success(f"✅ Found ID in script: {company_id}")
+                return company_id
+    
+    # Try another pattern: look for data attributes
+    st.write("🔍 Looking in data attributes...")
+    for element in soup.find_all(attrs={"data-id": True}):
+        data_id = element.get("data-id")
+        st.write(f"📌 Found data-id: {data_id}")
+        if data_id and len(data_id) > 5:
+            return data_id
+    
+    # Last resort: look for any alphanumeric ID pattern
+    st.write("🔍 Looking for any ID pattern...")
+    general_id_pattern = re.compile(r'\b([A-Z]{2}\d[A-Z0-9]{8,})\b')
+    matches = general_id_pattern.findall(html)
+    
+    if matches:
+        st.write(f"📌 Found potential IDs: {matches[:5]}")
+        return matches[0]
+    
+    st.error("❌ Could not extract company ID")
+    
+    # DEBUG: Show a sample of the HTML
+    with st.expander("🔍 DEBUG: HTML sample"):
+        st.code(html[:3000], language="html")
+    
+    return None
+
+def _build_company_url(company_id):
+    """
+    We have the ID but not the full URL.
+    Try to construct it or search for it.
+    """
+    # We can't construct the full URL without company name/city/industry
+    # So we need to extract it from the search results
+    return None
+
+def _find_full_url_from_search(org_number):
+    """
+    Get the complete company URL from search results
+    """
+    st.write(f"🔍 Finding full company URL...")
+    
+    search_url = f"{BASE_URL}/bransjesøk?q={org_number}"
+    html, _ = _safe_get(search_url)
+    
+    if not html:
+        return None
+    
+    # Look for complete URLs in the HTML
+    url_pattern = re.compile(r'https://www\.proff\.no/selskap/[^"\'<>\s]+')
+    urls = url_pattern.findall(html)
+    
+    if urls:
+        st.write(f"📌 Found {len(urls)} company URLs:")
+        for url in urls[:5]:
+            st.write(f"  - {url}")
+        
+        company_url = urls[0]
+        st.success(f"✅ Using URL: {company_url}")
+        return company_url
+    
+    st.error("❌ No complete URLs found")
+    return None
 
 def _parse_financial_table(soup):
     """
@@ -73,27 +158,9 @@ def _parse_financial_table(soup):
     
     if not tables:
         st.warning("⚠️ No tables found")
-        
-        # Try to find financial data in divs or other structures
-        st.write("🔍 Looking for financial data in other structures...")
-        text = soup.get_text()
-        
-        # Try to find numbers with context
-        patterns = {
-            "sum_driftsinnt": r"(?:driftsinntekt|omsetning)[^\d]*([\d\s]+)",
-            "driftsresultat": r"driftsresultat[^\d]*([\d\s\-]+)",
-            "ord_res_f_skatt": r"resultat.*?skatt[^\d]*([\d\s\-]+)",
-            "sum_eiendeler": r"(?:sum\s+)?eiendel[^\d]*([\d\s]+)"
-        }
-        
-        for key, pattern in patterns.items():
-            matches = re.findall(pattern, text.lower())
-            if matches:
-                st.write(f"  Found {key}: {matches[:3]}")
-        
         return data
     
-    # Try to find the financial table
+    # Find financial table
     financial_table = None
     for idx, table in enumerate(tables):
         table_text = table.get_text().lower()
@@ -104,16 +171,6 @@ def _parse_financial_table(soup):
     
     if not financial_table:
         st.warning("⚠️ No financial table found")
-        
-        # Show what's in tables
-        with st.expander("🔍 DEBUG: Show table contents"):
-            for idx, table in enumerate(tables[:3]):
-                st.write(f"**Table {idx+1}:**")
-                for row in table.find_all("tr")[:5]:
-                    cells = [c.get_text(strip=True) for c in row.find_all(["th", "td"])]
-                    if cells:
-                        st.write(cells)
-        
         return data
     
     # Extract years
@@ -127,7 +184,6 @@ def _parse_financial_table(soup):
     st.write(f"📅 Years: {years}")
     
     # Parse rows
-    row_count = 0
     for row in financial_table.find_all("tr"):
         cells = row.find_all(["th", "td"])
         if len(cells) < 2:
@@ -148,22 +204,15 @@ def _parse_financial_table(soup):
             if "sum driftsinntekt" in label or "driftsinntekter" in label or "omsetning" in label:
                 data[f"sum_driftsinnt_{year}"] = clean_value
                 st.write(f"  ✓ Revenue {year}: {clean_value}")
-                row_count += 1
             elif "driftsresultat" in label and "før" not in label:
                 data[f"driftsresultat_{year}"] = clean_value
                 st.write(f"  ✓ Operating result {year}: {clean_value}")
-                row_count += 1
             elif "resultat før skatt" in label or "ordinært resultat" in label:
                 data[f"ord_res_f_skatt_{year}"] = clean_value
                 st.write(f"  ✓ Result before tax {year}: {clean_value}")
-                row_count += 1
             elif "sum eiendeler" in label or "totale eiendeler" in label:
                 data[f"sum_eiendeler_{year}"] = clean_value
                 st.write(f"  ✓ Total assets {year}: {clean_value}")
-                row_count += 1
-    
-    if row_count == 0:
-        st.warning("⚠️ No financial data extracted from table")
     
     return data
 
@@ -180,12 +229,19 @@ def fetch_proff_info(org_number: str) -> dict:
         st.error("❌ Invalid org number")
         return {}
     
-    # Try different URL patterns
-    html, final_url = _try_url_patterns(org_number)
+    # Find the complete company URL from search
+    company_url = _find_full_url_from_search(org_number)
+    
+    if not company_url:
+        st.error("❌ Could not find company URL")
+        st.info(f"💡 Please visit: https://www.proff.no and search for: {org_number}")
+        return {}
+    
+    # Fetch the company page
+    html, final_url = _safe_get(company_url)
     
     if not html:
-        st.error("❌ Could not find company page")
-        st.info("💡 Try manually visiting: https://www.proff.no and searching for org number: " + org_number)
+        st.error("❌ Could not fetch company page")
         return {}
     
     soup = BeautifulSoup(html, "html.parser")
@@ -208,8 +264,5 @@ def fetch_proff_info(org_number: str) -> dict:
         st.json(out)
     else:
         st.warning("⚠️ No financial data extracted")
-        
-        # Suggest manual check
-        st.info(f"💡 Please check manually: https://www.proff.no (search for {org_number})")
     
     return out
