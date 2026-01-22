@@ -6,9 +6,9 @@ from app_modules.company_data import (
     format_company_data,
     search_brreg_live
 )
-from app_modules.summary import generate_company_summary
+from app_modules.Sheets.Sammendrag.summery_getter import generate_company_summary  # FIXED: Correct import path
 from app_modules.pdf_parser import extract_fields_from_pdf
-from app_modules.excel_filler import fill_excel
+from app_modules.Sheets.excel_filler import fill_excel  # FIXED: Correct import path
 from app_modules.download import download_excel_file
 
 # OPTIONAL: You will implement this later
@@ -153,4 +153,3 @@ def run():
             excel_bytes=excel_bytes,
             company_name=merged_fields.get("company_name", "Selskap")
         )
-

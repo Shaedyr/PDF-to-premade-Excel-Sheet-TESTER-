@@ -20,8 +20,8 @@ st.markdown(hide_sidebar_style, unsafe_allow_html=True)
 from app_modules import main_page
 from app_modules import company_data
 from app_modules import pdf_parser
-from app_modules import summary
-from app_modules import excel_filler
+from app_modules.Sheets.Sammendrag import summery_getter as summary  # FIXED: Correct import path
+from app_modules.Sheets import excel_filler  # FIXED: Correct import path
 from app_modules import template_loader
 from app_modules import download
 

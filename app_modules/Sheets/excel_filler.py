@@ -1,3 +1,4 @@
+import streamlit as st
 from openpyxl import load_workbook
 from openpyxl.styles import PatternFill, Alignment
 from io import BytesIO
@@ -72,3 +73,12 @@ def fill_excel(template_bytes, field_values, summary_text):
     wb.save(out)
     out.seek(0)
     return out.getvalue()
+
+
+# ---------------------------------------------------------
+# PAGE VIEW (so it works as a selectable page)
+# ---------------------------------------------------------
+def run():
+    st.title("📊 Excel Filler Module")
+    st.write("Dette modulen fyller Excel-maler med data.")
+    st.info("Brukes av hovedsiden for å generere Excel-filer.")
