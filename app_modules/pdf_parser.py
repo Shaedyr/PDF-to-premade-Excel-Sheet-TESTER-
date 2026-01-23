@@ -40,18 +40,19 @@ DEADLINE_RE = re.compile(
 # PDF TEXT EXTRACTION (WITH DEBUG)
 # ---------------------------------------------------------
 
-def extract_text_from_pdf(pdf_bytes: bytes) -> str:
-    """
-    Extracts text from the first 6 pages of a PDF.
-    Returns a single string.
-    WITH DEBUG OUTPUT!
-    """
-
+def extract_text_from_pdf(pdf_bytes):
+    """Extract text from PDF"""
+    
+    # Handle Streamlit UploadedFile objects
+    if hasattr(pdf_bytes, 'read'):
+        pdf_bytes = pdf_bytes.read()
+    
     if not pdf_bytes:
-        st.warning("⚠️ No PDF bytes provided to extract_text_from_pdf")
+        st.warning("⚠️ No PDF bytes provided")
         return ""
-
+    
     st.write(f"📄 **Attempting to extract text from PDF** ({len(pdf_bytes)} bytes)")
+    # ... rest of code
 
     try:
         text = ""
@@ -180,3 +181,4 @@ def run():
     st.title("📄 PDF Parser Module")
     st.write("Dette modulen ekstraherer tekst og felter fra PDF-dokumenter.")
     st.info("Brukes av hovedsiden for å hente data fra PDF.")
+
