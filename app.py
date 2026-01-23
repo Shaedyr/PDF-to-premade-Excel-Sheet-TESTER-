@@ -1,27 +1,21 @@
 import streamlit as st
 import app_modules.input as input_module
 
-# Remove sidebar
+# SIDEBAR IS NOW VISIBLE!
 st.set_page_config(
     layout="wide",
-    initial_sidebar_state="collapsed"
+    initial_sidebar_state="expanded"  # Changed from "collapsed" to "expanded"
 )
 
-hide_sidebar_style = """
-    <style>
-        [data-testid="stSidebar"] {display: none;}
-        [data-testid="stSidebarNav"] {display: none;}
-        [data-testid="stSidebarContent"] {display: none;}
-    </style>
-"""
-st.markdown(hide_sidebar_style, unsafe_allow_html=True)
+# REMOVED the CSS that hides the sidebar!
+# The sidebar will now be visible for debugging
 
 # Clean imports
 from app_modules import main_page
 from app_modules import company_data
 from app_modules import pdf_parser
-from app_modules.Sheets.Sammendrag import summery_getter as summary  # FIXED: Correct import path
-from app_modules.Sheets import excel_filler  # FIXED: Correct import path
+from app_modules.Sheets.Sammendrag import summery_getter as summary
+from app_modules.Sheets import excel_filler
 from app_modules import template_loader
 from app_modules import download
 
