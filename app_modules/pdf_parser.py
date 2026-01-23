@@ -74,6 +74,7 @@ def extract_fields_from_pdf(pdf_bytes: bytes) -> dict:
     - post nr + city
     - revenue
     - deadline
+    - pdf_text (full text for other sheets to use)
     """
 
     txt = extract_text_from_pdf(pdf_bytes)
@@ -81,6 +82,9 @@ def extract_fields_from_pdf(pdf_bytes: bytes) -> dict:
 
     if not txt:
         return fields
+
+    # IMPORTANT: Include full PDF text so other sheets (like Fordon) can parse it
+    fields["pdf_text"] = txt
 
     # 1) Org number
     m = ORG_IN_TEXT_RE.search(txt)
