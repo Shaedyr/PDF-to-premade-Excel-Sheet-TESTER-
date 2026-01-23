@@ -4,17 +4,23 @@ Centralized configuration for all Excel sheets.
 This file imports and aggregates all sheet mappings.
 """
 
-# Import only Sammendrag mapping (the only one that exists)
+# Import Sammendrag mapping
 from app_modules.Sheets.Sammendrag.mapping import (
     CELL_MAP as SAMMENDRAG_MAP,
     transform_data as transform_sammendrag
 )
 
+# Import Fordon mapping
+from app_modules.Sheets.Fordon.mapping import (
+    CELL_MAP as FORDON_MAP,
+    transform_data as transform_fordon
+)
+
 
 # Master mapping: Excel sheet name -> field mappings
-# This maps the actual Excel sheet names to their cell mappings
 SHEET_MAPPINGS = {
     "Sammendrag": SAMMENDRAG_MAP,
+    "Fordon": FORDON_MAP,  # Note: Fordon uses dynamic mapping, CELL_MAP is empty
     # Add other sheets here when you create their mapping files
 }
 
@@ -22,6 +28,7 @@ SHEET_MAPPINGS = {
 # Master transform functions: sheet name -> transform function
 SHEET_TRANSFORMS = {
     "Sammendrag": transform_sammendrag,
+    "Fordon": transform_fordon,
     # Add other sheets here when you create their mapping files
 }
 
