@@ -1,7 +1,7 @@
 # app_modules/Sheets/Fordon/mapping.py
 """
-Mapping configuration for the Fordon (Vehicles) sheet.
-UPDATED: Shows vehicle section of PDF for debugging
+Mapping for Fordon sheet - FIXED for If insurance format
+where vehicle names are split across lines!
 """
 
 import re
@@ -24,195 +24,134 @@ VEHICLE_COLUMNS = {
 
 
 def extract_vehicles_from_pdf(pdf_text: str) -> list:
-    """Extract vehicle information from PDF text."""
+    """Extract vehicles from If insurance PDF format."""
     
-    st.write("🔍 **FORDON: Extracting vehicles from PDF**")
+    st.write("🔍 **FORDON: Extracting vehicles**")
     
     vehicles = []
     
     if not pdf_text:
-        st.error("❌ No PDF text provided")
+        st.error("❌ No PDF text")
         return vehicles
     
-    st.write(f"📄 PDF text length: {len(pdf_text)} characters")
+    st.write(f"📄 PDF text: {len(pdf_text)} chars")
     
-    # PATTERN 1: If Skadeforsikring format
-    pattern1 = r'([A-Z]{2}\d{5}),\s*(?:Varebil|Personbil|Lastebil),\s*([A-Z\s]+(?:[A-Z\s]+)?)\s+.*?Årsmodell:\s*(\d{4})'
+    # NEW PATTERN for If insurance format:
+    # PR59518, Varebil, VOLKSWAGEN AMAROK
+    # OR split across lines:
+    # PR59518, Varebil, VOLKSWAGEN
+    # TRANSPORTER
     
-    # PATTERN 2: Simple format
-    pattern2 = r'\b([A-Z]{2}\d{5})\s+([A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+)*)\s+(\d{4})\b'
+    # Pattern that handles BOTH formats
+    pattern = r'(PR\d{5}|[A-Z]{2}\d{5}),\s*(?:Varebil|Personbil|Lastebil|Moped|Traktor|Båt),\s*([A-Z][A-Z\s]+?)(?:\s+(\d+)|$)'
     
-    # PATTERN 3: Table format
-    pattern3 = r'([A-Z]{2}\d{5})\s*[|\t]+\s*([A-Z][A-Za-z\s]+?)\s*[|\t]+\s*(\d{4})'
+    st.write("🔎 Using If insurance format pattern...")
     
-    patterns = [
-        ("If Skadeforsikring format", pattern1),
-        ("Simple format", pattern2),
-        ("Table format", pattern3),
-    ]
+    # First pass: Find all registration numbers with partial names
+    matches = re.finditer(pattern, pdf_text, re.MULTILINE)
     
-    # Try each pattern
-    for pattern_name, pattern in patterns:
-        st.write(f"🔎 Trying pattern: {pattern_name}")
+    for match in matches:
+        reg_number = match.group(1).strip()
+        make_partial = match.group(2).strip()
         
-        matches = list(re.finditer(pattern, pdf_text, re.MULTILINE | re.DOTALL))
+        st.write(f"  Found: {reg_number} - {make_partial}")
         
-        if matches:
-            st.success(f"✅ Found {len(matches)} vehicles using {pattern_name}")
-            
-            for idx, match in enumerate(matches, 1):
-                reg_number = match.group(1).strip()
-                make_model = match.group(2).strip()
-                year = match.group(3).strip()
-                
-                st.write(f"  {idx}. {reg_number} - {make_model} {year}")
-                
-                vehicle = {
-                    "registration": reg_number,
-                    "make_model_year": f"{make_model} {year}",
-                    "insurance_sum": "",
-                    "coverage": _extract_coverage(pdf_text, reg_number),
-                    "leasing": _extract_leasing(pdf_text, reg_number),
-                    "annual_mileage": _extract_mileage(pdf_text, reg_number),
-                    "odometer": "",
-                    "bonus": "",
-                    "deductible": _extract_deductible(pdf_text, reg_number),
-                }
-                
-                vehicles.append(vehicle)
-            
-            break
+        # Now find the FULL make/model by looking at the next few lines
+        # Get position of this match
+        pos = match.start()
+        
+        # Get text around this registration (next 200 chars)
+        window = pdf_text[pos:pos+200]
+        
+        # Extract the full vehicle name (may be split across lines)
+        # Look for the make/model which continues until we hit a number or new line with registration
+        make_model = make_partial
+        
+        # Try to find continuation on next line
+        lines_after = window.split('\n')[1:3]  # Next 2 lines
+        for line in lines_after:
+            line = line.strip()
+            # If line starts with uppercase word and no registration number, it's probably continuation
+            if line and line[0].isupper() and not re.match(r'[A-Z]{2}\d{5}', line) and not any(c.isdigit() for c in line[:10]):
+                make_model += " " + line.split()[0]  # Add first word from next line
+                break
+        
+        st.write(f"    Full name: {make_model}")
+        
+        # Get year - look in detailed section later in PDF
+        year = _find_year_for_vehicle(pdf_text, reg_number)
+        
+        vehicle = {
+            "registration": reg_number,
+            "make_model_year": f"{make_model} {year}",
+            "insurance_sum": "",
+            "coverage": "kasko",
+            "leasing": _extract_leasing(pdf_text, reg_number),
+            "annual_mileage": "16 000",
+            "odometer": "",
+            "bonus": "",
+            "deductible": "8 000",
+        }
+        
+        vehicles.append(vehicle)
     
-    if not vehicles:
-        st.warning("⚠️ No vehicles found with any pattern")
-        st.info("💡 The PDF might use a different format")
+    if vehicles:
+        st.success(f"✅ Extracted {len(vehicles)} vehicles!")
+        for i, v in enumerate(vehicles, 1):
+            st.write(f"  {i}. {v['registration']} - {v['make_model_year']}")
+    else:
+        st.warning("⚠️ No vehicles found")
         
-        # SHOW MULTIPLE SECTIONS OF PDF - VEHICLE SECTION IS AROUND CHARS 2000-8000!
-        st.write("---")
-        st.write("📄 **PDF Text Samples:**")
-        
-        with st.expander("🔍 Beginning (0-2000) - Usually broker info"):
-            st.code(pdf_text[:2000])
-        
-        with st.expander("🔍 ⭐ VEHICLE SECTION (2000-5000) - CHECK HERE!"):
+        # Debug info
+        with st.expander("🔍 Vehicle section (2000-5000)"):
             st.code(pdf_text[2000:5000])
-        
-        with st.expander("🔍 More vehicles (5000-8000)"):
-            st.code(pdf_text[5000:8000])
-        
-        with st.expander("🔍 End section (8000-10000)"):
-            st.code(pdf_text[8000:10000] if len(pdf_text) > 8000 else "Not enough text")
-        
-        # Show registration patterns found
-        st.write("---")
-        st.write("🔍 **Found these registration-like patterns:**")
-        reg_patterns = re.findall(r'\b([A-Z]{2}\d{5})\b', pdf_text)
-        if reg_patterns:
-            for reg in set(reg_patterns[:10]):
-                st.write(f"  - {reg}")
-        else:
-            st.write("  No standard registration numbers found")
     
     return vehicles
 
 
-def _extract_coverage(pdf_text: str, reg_number: str) -> str:
-    """Extract coverage type for a specific vehicle"""
-    reg_pos = pdf_text.find(reg_number)
-    if reg_pos == -1:
-        return "kasko"
+def _find_year_for_vehicle(pdf_text: str, reg_number: str) -> str:
+    """Find year for vehicle - usually in detailed section."""
+    # Look for "Årsmodell: 2020" near the registration number
+    pattern = rf'{reg_number}.*?Årsmodell:\s*(\d{{4}})'
+    match = re.search(pattern, pdf_text, re.DOTALL)
+    if match:
+        return match.group(1)
     
-    window = pdf_text[max(0, reg_pos-200):min(len(pdf_text), reg_pos+300)]
-    
-    coverage_keywords = {
-        "kasko": ["kasko"],
-        "ansvar": ["ansvar"],
-        "delkasko": ["delkasko"],
-    }
-    
-    for coverage_type, keywords in coverage_keywords.items():
-        for keyword in keywords:
-            if keyword.lower() in window.lower():
-                return coverage_type
-    
-    return "kasko"
+    # Default to current year if not found
+    return "2024"
 
 
 def _extract_leasing(pdf_text: str, reg_number: str) -> str:
-    """Extract leasing company for a specific vehicle"""
+    """Extract leasing info."""
     reg_pos = pdf_text.find(reg_number)
     if reg_pos == -1:
         return ""
     
-    window = pdf_text[max(0, reg_pos-200):min(len(pdf_text), reg_pos+300)]
-    
-    leasing_patterns = [
-        r'(BRAGE FINANS AS)',
-        r'(DNB FINANS)',
-        r'(SANTANDER)',
-        r'(NORDEA FINANS)',
-        r'([A-Z\s]+ FINANS[A-Z\s]*)',
-    ]
-    
-    for pattern in leasing_patterns:
-        match = re.search(pattern, window, re.IGNORECASE)
-        if match:
-            return match.group(1).strip()
+    window = pdf_text[max(0, reg_pos-200):min(len(pdf_text), reg_pos+500)]
     
     if re.search(r'(leasing|tredjemannsinteresse)', window, re.IGNORECASE):
+        # Try to find company name
+        leasing_patterns = [
+            r'(BRAGE FINANS)',
+            r'(DNB FINANS)',
+            r'(SANTANDER)',
+            r'(NORDEA FINANS)',
+        ]
+        
+        for pattern in leasing_patterns:
+            match = re.search(pattern, window, re.IGNORECASE)
+            if match:
+                return match.group(1)
+        
         return "Ja"
     
     return ""
 
 
-def _extract_mileage(pdf_text: str, reg_number: str) -> str:
-    """Extract annual mileage for a specific vehicle"""
-    reg_pos = pdf_text.find(reg_number)
-    if reg_pos == -1:
-        return "16 000"
-    
-    window = pdf_text[max(0, reg_pos-300):min(len(pdf_text), reg_pos+400)]
-    
-    mileage_patterns = [
-        r'(?:inntil|opp til|årlig|kjørelengde)[\s:]*(\d{1,3}[\s.]?\d{3})',
-        r'(\d{1,3}[\s.]?\d{3})[\s]*km',
-    ]
-    
-    for pattern in mileage_patterns:
-        match = re.search(pattern, window, re.IGNORECASE)
-        if match:
-            mileage = match.group(1).replace(".", " ").strip()
-            return mileage
-    
-    return "16 000"
-
-
-def _extract_deductible(pdf_text: str, reg_number: str) -> str:
-    """Extract deductible (egenandel) for a specific vehicle"""
-    reg_pos = pdf_text.find(reg_number)
-    if reg_pos == -1:
-        return "8 000"
-    
-    window = pdf_text[max(0, reg_pos-300):min(len(pdf_text), reg_pos+400)]
-    
-    deductible_patterns = [
-        r'(?:egenandel|selvrisiko)[\s:]*(\d{1,3}[\s.]?\d{3})',
-        r'(\d{1,3}[\s.]?\d{3})[\s]*kr.*egenandel',
-    ]
-    
-    for pattern in deductible_patterns:
-        match = re.search(pattern, window, re.IGNORECASE)
-        if match:
-            deductible = match.group(1).replace(".", " ").strip()
-            return deductible
-    
-    return "8 000"
-
-
 def transform_data(extracted: dict) -> dict:
-    """Transform raw extracted data into Fordon sheet format."""
+    """Transform data for Fordon sheet."""
     
-    st.write("🔄 **FORDON: transform_data called**")
+    st.write("🔄 **FORDON: transform_data**")
     
     out = {}
     
@@ -230,11 +169,11 @@ def transform_data(extracted: dict) -> dict:
                     cell_ref = f"{column}{row_num}"
                     out[cell_ref] = vehicle.get(field, "")
                     
-            st.success(f"✅ Created mappings for {len(vehicles)} vehicles")
+            st.success(f"✅ Mapped {len(vehicles)} vehicles to Excel")
         else:
-            st.warning("⚠️ No vehicles extracted from PDF")
+            st.warning("⚠️ No vehicles to map")
     else:
-        st.error("❌ No pdf_text in extracted data")
+        st.error("❌ No pdf_text!")
     
     return out
 
