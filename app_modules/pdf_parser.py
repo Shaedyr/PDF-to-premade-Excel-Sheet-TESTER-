@@ -4,7 +4,7 @@ import re
 from io import BytesIO
 
 # ---------------------------------------------------------
-# REGEX PATTERNS
+# REGEX PATTERNS (FIXED!)
 # ---------------------------------------------------------
 
 ORG_RE = re.compile(r"\b(\d{9})\b")
@@ -13,8 +13,9 @@ ORG_IN_TEXT_RE = re.compile(
     flags=re.I
 )
 
+# FIXED: Less greedy pattern, stops at line breaks
 COMPANY_WITH_SUFFIX_RE = re.compile(
-    r"([A-ZÆØÅ][A-Za-zÆØÅæøå0-9.\-&\s]{1,120}?)\s+(AS|ASA|ANS|DA|ENK|KS|BA)\b",
+    r"([A-ZÆØÅ][A-Za-zÆØÅæøå0-9.\-&]{1,60}?)\s+(AS|ASA|ANS|DA|ENK|KS|BA)\b",
     flags=re.I
 )
 
@@ -36,15 +37,23 @@ DEADLINE_RE = re.compile(
     flags=re.I
 )
 
-# Companies to IGNORE (insurance brokers, not clients)
-IGNORE_COMPANIES = [
+# Companies to COMPLETELY IGNORE (exact match)
+IGNORE_COMPANIES_EXACT = [
     "AS FORSIKRINGSMEGLING",
-    "IF SKADEFORSIKRING",
-    "GJENSIDIGE FORSIKRING",
+    "IF SKADEFORSIKRING NUF",
+    "IF SKADEFORSIKRING AB",
+    "GJENSIDIGE FORSIKRING ASA",
     "TRYG FORSIKRING",
 ]
 
-# Vehicle section keywords to look for
+# Keywords in company name to ignore (partial match)
+IGNORE_KEYWORDS = [
+    "FORSIKRINGSMEGLING",
+    "INSURANCE",
+    "MEGLING",
+]
+
+# Vehicle section keywords
 VEHICLE_KEYWORDS = [
     "kjøretøyforsikring",
     "næringsbil",
@@ -60,8 +69,7 @@ VEHICLE_KEYWORDS = [
 
 def extract_text_from_pdf(pdf_bytes: bytes) -> str:
     """
-    SMART extraction: Reads pages until vehicle section is found,
-    then continues until section ends or hits page limit.
+    SMART extraction: Finds vehicle section automatically.
     """
 
     # Handle Streamlit UploadedFile objects
@@ -78,66 +86,66 @@ def extract_text_from_pdf(pdf_bytes: bytes) -> str:
         text = ""
         vehicle_section_found = False
         pages_after_vehicles = 0
-        max_pages_to_read = 50  # Safety limit
+        max_pages_to_read = 50
         
         with pdfplumber.open(BytesIO(pdf_bytes)) as pdf:
             total_pages = len(pdf.pages)
-            st.success(f"✅ PDF opened! {total_pages} pages total")
+            st.success(f"✅ PDF: {total_pages} pages")
             st.info("🔍 Searching for vehicle section...")
             
             for i, page in enumerate(pdf.pages):
                 if i >= max_pages_to_read:
-                    st.warning(f"⚠️ Reached page limit ({max_pages_to_read}), stopping")
+                    st.warning(f"⚠️ Reached {max_pages_to_read} pages, stopping")
                     break
                 
                 extracted = page.extract_text()
                 if extracted:
                     text += extracted + "\n"
                     
-                    # Check if this page has vehicle keywords
+                    # Check for vehicle keywords
                     page_lower = extracted.lower()
-                    has_vehicle_keywords = any(keyword in page_lower for keyword in VEHICLE_KEYWORDS)
+                    has_vehicle_keywords = any(kw in page_lower for kw in VEHICLE_KEYWORDS)
                     
                     if has_vehicle_keywords:
                         if not vehicle_section_found:
-                            st.success(f"🚗 Found vehicle section starting at page {i+1}!")
+                            st.success(f"🚗 Vehicle section found at page {i+1}!")
                             vehicle_section_found = True
-                        pages_after_vehicles = 0  # Reset counter
-                        st.write(f"  ✓ Page {i+1}: {len(extracted)} chars (vehicle data)")
+                        pages_after_vehicles = 0
+                        st.write(f"  ✓ Page {i+1}: {len(extracted)} chars (vehicles)")
                     else:
                         if vehicle_section_found:
                             pages_after_vehicles += 1
                             st.write(f"  · Page {i+1}: {len(extracted)} chars")
                             
-                            # If we've gone 5 pages without vehicle keywords, we're done
+                            # Stop if 5 pages without vehicle keywords
                             if pages_after_vehicles >= 5:
-                                st.success(f"✅ Vehicle section ended, stopping at page {i+1}")
+                                st.success(f"✅ Vehicle section ended at page {i+1}")
                                 break
                         else:
-                            # Before vehicle section - just note it
-                            if i < 10 or i % 5 == 0:  # Don't spam output
+                            # Before vehicle section
+                            if i < 10 or i % 5 == 0:
                                 st.write(f"  · Page {i+1}: {len(extracted)} chars")
         
         if text:
-            st.success(f"✅ **Total: {len(text)} characters from {i+1} pages**")
+            st.success(f"✅ **Total: {len(text)} chars from {i+1} pages**")
         else:
             st.error("❌ No text extracted!")
         
         return text
 
     except Exception as e:
-        st.error(f"❌ PDF error: {e}")
+        st.error(f"❌ Error: {e}")
         import traceback
         st.code(traceback.format_exc())
         return ""
 
 # ---------------------------------------------------------
-# FIELD EXTRACTION
+# FIELD EXTRACTION (FIXED COMPANY DETECTION!)
 # ---------------------------------------------------------
 
 def extract_fields_from_pdf(pdf_bytes: bytes) -> dict:
     """
-    Extracts useful fields from a PDF.
+    Extracts fields from PDF with IMPROVED company name detection.
     """
     
     st.write("=" * 50)
@@ -151,7 +159,7 @@ def extract_fields_from_pdf(pdf_bytes: bytes) -> dict:
         st.error("❌ No text extracted")
         return fields
 
-    # IMPORTANT: Include full PDF text
+    # IMPORTANT: Store full text
     fields["pdf_text"] = txt
     st.write(f"✓ Added 'pdf_text' ({len(txt)} chars)")
 
@@ -166,22 +174,44 @@ def extract_fields_from_pdf(pdf_bytes: bytes) -> dict:
             fields["org_number"] = m2.group(1)
             st.write(f"✓ Org number: {m2.group(1)}")
 
-    # 2) Company name - SKIP insurance brokers!
-    matches = COMPANY_WITH_SUFFIX_RE.finditer(txt)
-    for m3 in matches:
-        company = m3.group(0).strip()
-        
-        # Skip if it's an insurance broker
-        if any(ignore.upper() in company.upper() for ignore in IGNORE_COMPANIES):
-            st.write(f"⊘ Skipping broker: {company}")
-            continue
-        
-        # This is the actual client company!
-        fields["company_name"] = company
-        st.write(f"✓ Company: {company}")
-        break
+    # 2) Company name - IMPROVED FILTERING!
+    st.write("🔍 Searching for company name...")
+    
+    # Split text into lines to avoid matching across line breaks
+    lines = txt.split('\n')
+    candidates = []
+    
+    for line in lines:
+        matches = COMPANY_WITH_SUFFIX_RE.finditer(line)
+        for m3 in matches:
+            company = m3.group(0).strip()
+            
+            # Skip if too short
+            if len(company) < 5:
+                continue
+            
+            # Check exact ignore list
+            if company.upper() in [c.upper() for c in IGNORE_COMPANIES_EXACT]:
+                st.write(f"  ⊘ Ignored (exact): {company}")
+                continue
+            
+            # Check keyword ignore list
+            if any(kw.upper() in company.upper() for kw in IGNORE_KEYWORDS):
+                st.write(f"  ⊘ Ignored (keyword): {company}")
+                continue
+            
+            # This looks like a real company!
+            candidates.append(company)
+            st.write(f"  ✓ Candidate: {company}")
+    
+    # Pick the first valid candidate
+    if candidates:
+        fields["company_name"] = candidates[0]
+        st.success(f"✅ Selected company: {candidates[0]}")
+    else:
+        st.warning("⚠️ No company name found")
 
-    # 3) Postnummer + city
+    # 3) Postal code + city
     mpc = POST_CITY_RE.search(txt)
     if mpc:
         fields["post_nr"] = mpc.group(1)
@@ -217,4 +247,4 @@ def extract_fields_from_pdf(pdf_bytes: bytes) -> dict:
 # ---------------------------------------------------------
 def run():
     st.title("📄 PDF Parser Module")
-    st.write("Smart PDF extraction that finds vehicle sections automatically")
+    st.write("Smart extraction with improved company detection")
