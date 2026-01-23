@@ -15,6 +15,46 @@ from app_modules.download import download_excel_file
 def run():
     st.title("📄 PDF → Excel (BRREG + Manual Entry)")
     st.caption("Fetch company information and update Excel automatically")
+    
+    # ---------------------------------------------------------
+    # PERMANENT DEBUG SIDEBAR
+    # ---------------------------------------------------------
+    with st.sidebar:
+        st.markdown("### 🐛 Debug Panel")
+        
+        if "debug_data" in st.session_state:
+            debug = st.session_state.debug_data
+            
+            with st.expander("📦 Company Data", expanded=False):
+                st.json(debug.get("company_data", {}))
+            
+            with st.expander("💰 Financial Data", expanded=False):
+                st.json(debug.get("financial_data", {}))
+            
+            with st.expander("📄 PDF Fields", expanded=False):
+                pdf_fields = debug.get("pdf_fields", {})
+                if "pdf_text" in pdf_fields:
+                    pdf_text_len = len(pdf_fields["pdf_text"])
+                    st.write(f"✅ pdf_text exists ({pdf_text_len} chars)")
+                    other_fields = {k: v for k, v in pdf_fields.items() if k != "pdf_text"}
+                    st.json(other_fields)
+                else:
+                    st.error("❌ No pdf_text!")
+                    st.json(pdf_fields)
+            
+            with st.expander("🔀 Merged Fields", expanded=False):
+                merged = debug.get("merged_fields", {})
+                if "pdf_text" in merged:
+                    pdf_text_len = len(merged["pdf_text"])
+                    st.write(f"✅ pdf_text exists ({pdf_text_len} chars)")
+                    other_fields = {k: v for k, v in merged.items() if k != "pdf_text"}
+                    st.json(other_fields)
+                else:
+                    st.error("❌ No pdf_text in merged!")
+                    st.json(merged)
+        else:
+            st.info("No data yet. Select a company to see debug info.")
+    
     st.divider()
 
     # ---------------------------------------------------------
@@ -165,6 +205,14 @@ def run():
     merged_fields.update(company_data)
     merged_fields.update(pdf_fields)
     merged_fields["company_summary"] = summary_text
+    
+    # Store debug data in session state
+    st.session_state.debug_data = {
+        "company_data": company_data,
+        "financial_data": financial_data,
+        "pdf_fields": pdf_fields,
+        "merged_fields": merged_fields,
+    }
 
     st.divider()
     st.subheader("📋 Data Preview")
