@@ -21,6 +21,15 @@ def fill_excel(template_bytes, field_values, summary_text):
     """
     wb = load_workbook(filename=BytesIO(template_bytes))
 
+    # DEBUG: Show what data we received
+    st.write("🔍 **EXCEL_FILLER DEBUG:**")
+    st.write(f"📦 field_values keys: {list(field_values.keys())}")
+    if "pdf_text" in field_values:
+        st.success(f"✅ pdf_text EXISTS in field_values! Length: {len(field_values['pdf_text'])} chars")
+    else:
+        st.error("❌ pdf_text NOT in field_values!")
+        st.write("Available keys:", list(field_values.keys()))
+
     # Process each sheet that has a mapping configured
     for sheet_name in SHEET_MAPPINGS.keys():
         if sheet_name not in wb.sheetnames:
