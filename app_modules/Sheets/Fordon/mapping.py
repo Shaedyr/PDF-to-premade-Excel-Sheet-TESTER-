@@ -1,9 +1,9 @@
 # app_modules/Sheets/Fordon/mapping.py
 """
-SMART VEHICLE CATEGORIZATION - FINAL VERSION
-- Ignores Maskinløsøre (machine equipment, not vehicles)
-- Better pattern for Gjensidige unregistered machines
-- Categorizes by type into correct rows
+SMART VEHICLE CATEGORIZATION - FIXED PATTERNS
+- More flexible table pattern to catch all 19 cars
+- Better unregistered machine pattern
+- Cleans up extra text (like "ASA", "AS")
 """
 
 import re
@@ -40,16 +40,16 @@ VEHICLE_PATTERNS = {
         "extract_func": "extract_if_format",
         "priority": 1,
     },
-    "Gjensidige_Unreg": {
-        "name": "Gjensidige unregistered machines",
-        "pattern": r'Uregistrert traktor og arb\.maskin\s*-\s*(Doosan|Hitachi|Caterpillar|Liebherr|Sennebogen|Komatsu|Volvo)\s+([0-9A-Z\s]+?)(?:\s+(\d{4}))?',
-        "extract_func": "extract_gjensidige_unreg",
+    "Gjensidige_Unreg_Simple": {
+        "name": "Gjensidige unregistered (simple)",
+        "pattern": r'Uregistrert traktor og arb[.\s]*maskin[.\s]*-[.\s]*(Doosan|Hitachi|Caterpillar|Liebherr|Sennebogen|Komatsu|Volvo)\s+([0-9A-Z\s]+?)(?:-|Uregistrert|\n)',
+        "extract_func": "extract_gjensidige_unreg_simple",
         "priority": 2,
     },
-    "Gjensidige_Table": {
-        "name": "Gjensidige table format",
-        "pattern": r'([A-Z\s\-]+(?:VOLKSWAGEN|FORD|TOYOTA|MERCEDES|LAND ROVER|CITROEN|PEUGEOT|VOLVO|SCANIA|MAN)[A-Z\s\-]*)\s+(\d{4})\s+([A-Z]{2}\s?\d{5})',
-        "extract_func": "extract_gjensidige_table",
+    "Gjensidige_Table_Flexible": {
+        "name": "Gjensidige table (flexible)",
+        "pattern": r'((?:[A-Z]+\s+)*?(?:VOLKSWAGEN|FORD|TOYOTA|MERCEDES-BENZ|MERCEDES|LAND ROVER|CITROEN|PEUGEOT|VOLVO|SCANIA|MAN)[A-Z\s\-()0-9]*?)\s+(\d{4})\s+([A-Z]{2}\s?\d{5})',
+        "extract_func": "extract_gjensidige_table_flexible",
         "priority": 3,
     },
 }
@@ -115,6 +115,7 @@ def extract_vehicles_from_pdf(pdf_text: str) -> dict:
         
         extract_func = globals().get(extract_func_name)
         if not extract_func:
+            st.error(f"    ❌ Function not found: {extract_func_name}")
             continue
         
         try:
@@ -123,8 +124,10 @@ def extract_vehicles_from_pdf(pdf_text: str) -> dict:
             if extracted:
                 st.write(f"    ✅ {len(extracted)} vehicles")
                 all_vehicles.extend(extracted)
+            else:
+                st.write(f"    ⊘ No matches")
         except Exception as e:
-            st.error(f"    ❌ {e}")
+            st.error(f"    ❌ Error: {str(e)}")
     
     # Categorize
     st.write("---")
@@ -209,24 +212,66 @@ def extract_if_format(pdf_text: str, pattern: str) -> list:
     return vehicles
 
 
-def extract_gjensidige_unreg(pdf_text: str, pattern: str) -> list:
-    """Extract Gjensidige unregistered machines."""
+def extract_gjensidige_unreg_simple(pdf_text: str, pattern: str) -> list:
+    """Extract Gjensidige unregistered machines - SIMPLER pattern."""
     vehicles = []
-    matches = re.finditer(pattern, pdf_text, re.MULTILINE)
     
+    # Try the pattern
+    matches = list(re.finditer(pattern, pdf_text, re.MULTILINE | re.DOTALL))
+    
+    if not matches:
+        # Fallback: search for the text manually
+        st.write("    🔍 Trying manual search for unregistered machines...")
+        
+        # Look for lines containing "Uregistrert traktor"
+        lines = pdf_text.split('\n')
+        for i, line in enumerate(lines):
+            if 'Uregistrert traktor' in line or 'arbeidsmaskin' in line.lower():
+                # Try to extract make/model from this line
+                for brand in ['Doosan', 'Hitachi', 'Caterpillar', 'Liebherr', 'Sennebogen', 'Komatsu', 'Volvo']:
+                    if brand in line:
+                        # Extract model after brand
+                        parts = line.split(brand)
+                        if len(parts) > 1:
+                            model_part = parts[1].strip()
+                            # Extract model (letters, numbers, spaces until dash or newline)
+                            model_match = re.match(r'([0-9A-Z\s]+?)(?:-|\n|Uregistrert)', model_part)
+                            if model_match:
+                                model = model_match.group(1).strip()
+                                
+                                # Look for year nearby
+                                year = "2024"
+                                year_match = re.search(r'\b(20\d{2})\b', line)
+                                if year_match:
+                                    year = year_match.group(1)
+                                
+                                vehicle = {
+                                    "registration": "Uregistrert",
+                                    "vehicle_type": "traktor",
+                                    "make_model_year": f"{brand} {model} {year}",
+                                    "insurance_sum": "",
+                                    "coverage": "kasko",
+                                    "leasing": "",
+                                    "annual_mileage": "",
+                                    "odometer": "",
+                                    "bonus": "",
+                                    "deductible": "",
+                                }
+                                vehicles.append(vehicle)
+                                st.write(f"      Found: {brand} {model}")
+        
+        return vehicles
+    
+    # Normal pattern matching
     for match in matches:
         make = match.group(1).strip()
         model = match.group(2).strip()
         
-        # Year might be in group 3, or look ahead
-        year = match.group(3) if match.lastindex >= 3 and match.group(3) else None
-        
-        if not year:
-            # Look ahead for year
-            pos = match.end()
-            window = pdf_text[pos:pos+300]
-            year_match = re.search(r'\b(20\d{2})\b', window)
-            year = year_match.group(1) if year_match else "2024"
+        # Look for year nearby
+        pos = match.start()
+        window = pdf_text[max(0, pos-100):min(len(pdf_text), pos+400)]
+        year_match = re.search(r'\b(20\d{2})\b', window)
+        year = year_match.group(1) if year_match else "2024"
         
         vehicle = {
             "registration": "Uregistrert",
@@ -246,15 +291,18 @@ def extract_gjensidige_unreg(pdf_text: str, pattern: str) -> list:
     return vehicles
 
 
-def extract_gjensidige_table(pdf_text: str, pattern: str) -> list:
-    """Extract from Gjensidige table."""
+def extract_gjensidige_table_flexible(pdf_text: str, pattern: str) -> list:
+    """Extract from Gjensidige table - MORE FLEXIBLE."""
     vehicles = []
     matches = re.finditer(pattern, pdf_text, re.MULTILINE)
     
     for match in matches:
-        make_model = match.group(1).strip()
+        make_model_raw = match.group(1).strip()
         year = match.group(2).strip()
         reg_number = match.group(3).strip().replace(" ", "")
+        
+        # Clean up make/model - remove company suffixes
+        make_model = _clean_make_model(make_model_raw)
         
         vehicle = {
             "registration": reg_number,
@@ -277,6 +325,18 @@ def extract_gjensidige_table(pdf_text: str, pattern: str) -> list:
 # ============================================================================
 # HELPER FUNCTIONS
 # ============================================================================
+
+def _clean_make_model(text: str) -> str:
+    """Clean up make/model text - remove company suffixes."""
+    # Remove common suffixes that appear before the actual make
+    text = re.sub(r'^(AS|ASA|E)\s+', '', text)  # Remove leading AS, ASA, E
+    text = re.sub(r'\s+(AS|ASA)$', '', text)  # Remove trailing AS, ASA
+    
+    # Remove extra spaces
+    text = ' '.join(text.split())
+    
+    return text.strip()
+
 
 def _find_year_for_vehicle(pdf_text: str, reg_number: str) -> str:
     """Find year."""
@@ -313,12 +373,15 @@ def _extract_leasing(pdf_text: str, reg_number: str) -> str:
 
 def _show_debug_info(pdf_text: str):
     """Show debug info."""
-    with st.expander("🔍 PDF text sample"):
+    with st.expander("🔍 PDF text sample (2000-5000)"):
         st.code(pdf_text[2000:5000])
+    
+    with st.expander("🔍 PDF text sample (10000-13000)"):
+        st.code(pdf_text[10000:13000])
     
     reg_patterns = re.findall(r'\b([A-Z]{2}\s?\d{5})\b', pdf_text)
     if reg_patterns:
-        st.write("Found registration patterns:", list(set(reg_patterns[:10])))
+        st.write("Found registration patterns:", list(set(reg_patterns[:20])))
 
 
 # ============================================================================
