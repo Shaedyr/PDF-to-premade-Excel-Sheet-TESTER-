@@ -12,7 +12,7 @@ except ImportError:
     OCR_AVAILABLE = False
 
 # ---------------------------------------------------------
-# REGEX PATTERNS (removed company name patterns)
+# REGEX PATTERNS
 # ---------------------------------------------------------
 
 ORG_RE = re.compile(r"\b(\d{9})\b")
@@ -29,25 +29,20 @@ ADDRESS_RE = re.compile(
     r"([A-ZÆØÅa-zæøå.\-\s]{3,60}\s+\d{1,4}[A-Za-z]?)"
 )
 
-# Vehicle section keywords
+# Vehicle section keywords (for finding section, not extraction)
 VEHICLE_KEYWORDS = [
     "kjøretøyforsikring",
     "næringsbil",
     "varebil",
     "personbil",
-    "registreringsnummer",
-    "årsmodell",
-    "arbeidsmaskin",
-    "traktor",
-    "uregistrert",
 ]
 
 # ---------------------------------------------------------
-# PDF TEXT EXTRACTION WITH OCR FALLBACK
+# PDF TEXT EXTRACTION - NO ANNOYING MESSAGE!
 # ---------------------------------------------------------
 
 def extract_text_from_pdf(pdf_bytes: bytes) -> str:
-    """Smart extraction with OCR fallback for image-based PDFs."""
+    """Smart extraction with OCR fallback."""
 
     # Handle Streamlit UploadedFile objects
     if hasattr(pdf_bytes, 'read'):
@@ -101,15 +96,14 @@ def extract_text_from_pdf(pdf_bytes: bytes) -> str:
                 if extracted and len(extracted.strip()) > 10:
                     text += extracted + "\n"
                     
-                    # Check for vehicle keywords
+                    # Check for vehicle keywords - BUT DON'T ANNOUNCE IT!
                     page_lower = extracted.lower()
                     has_vehicle_keywords = any(kw in page_lower for kw in VEHICLE_KEYWORDS)
                     
                     if has_vehicle_keywords:
-                        if not vehicle_section_found:
-                            st.success(f"🚗 Found vehicles at page {i+1}!")
-                            vehicle_section_found = True
+                        vehicle_section_found = True
                         pages_after_vehicles = 0
+                        # NO MESSAGE - just mark it found
                     else:
                         if vehicle_section_found:
                             pages_after_vehicles += 1
@@ -134,14 +128,11 @@ def extract_text_from_pdf(pdf_bytes: bytes) -> str:
         return ""
 
 # ---------------------------------------------------------
-# FIELD EXTRACTION (SIMPLIFIED - NO COMPANY NAME!)
+# FIELD EXTRACTION
 # ---------------------------------------------------------
 
 def extract_fields_from_pdf(pdf_bytes: bytes) -> dict:
-    """
-    Extract fields from PDF.
-    NOTE: Company name comes from BRREG search, not PDF!
-    """
+    """Extract fields from PDF."""
     
     st.write("=" * 50)
     st.write("🔍 **PDF PARSER**")
@@ -154,11 +145,11 @@ def extract_fields_from_pdf(pdf_bytes: bytes) -> dict:
         st.error("❌ No text extracted")
         return fields
 
-    # IMPORTANT: Store full text for vehicle extraction
+    # Store full text
     fields["pdf_text"] = txt
     st.write(f"✓ Added 'pdf_text' ({len(txt)} chars)")
 
-    # 1) Org number (optional - might find it in PDF)
+    # 1) Org number
     m = ORG_IN_TEXT_RE.search(txt)
     if m:
         fields["org_number"] = m.group(2)
@@ -169,14 +160,14 @@ def extract_fields_from_pdf(pdf_bytes: bytes) -> dict:
             fields["org_number"] = m2.group(1)
             st.write(f"✓ Org number: {m2.group(1)}")
 
-    # 2) Postal code + city (optional)
+    # 2) Postal code + city
     mpc = POST_CITY_RE.search(txt)
     if mpc:
         fields["post_nr"] = mpc.group(1)
         fields["city"] = mpc.group(2).strip()
         st.write(f"✓ Postal: {mpc.group(1)} {mpc.group(2).strip()}")
 
-    # 3) Address (optional)
+    # 3) Address
     maddr = ADDRESS_RE.search(txt)
     if maddr:
         fields["address"] = maddr.group(1).strip()
