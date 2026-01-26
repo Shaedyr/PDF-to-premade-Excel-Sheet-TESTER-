@@ -12,11 +12,11 @@ import streamlit as st
 
 # Row ranges for each vehicle type
 VEHICLE_ROWS = {
-    "car": {"start": 3, "end": 15, "name": "Cars"},
-    "trailer": {"start": 16, "end": 28, "name": "Trailers"},
-    "moped": {"start": 29, "end": 41, "name": "Mopeds"},
-    "tractor": {"start": 42, "end": 54, "name": "Tractors"},
-    "boat": {"start": 55, "end": 67, "name": "Boats"},
+    "car": {"start": 3, "end": 22, "name": "Cars"},  # B3-B22 (20 slots)
+    "trailer": {"start": 26, "end": 34, "name": "Trailers"},  # B26-B34 (9 slots)
+    "moped": {"start": 38, "end": 46, "name": "Mopeds"},  # B38-B46 (9 slots)
+    "tractor": {"start": 50, "end": 60, "name": "Tractors"},  # B50-B60 (11 slots)
+    "boat": {"start": 64, "end": 72, "name": "Boats"},  # B64-B72 (9 slots)
 }
 
 VEHICLE_COLUMNS = {
