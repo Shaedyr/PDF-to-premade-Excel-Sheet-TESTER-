@@ -3,8 +3,16 @@ import pdfplumber
 import re
 from io import BytesIO
 
+# Try to import OCR libraries
+try:
+    from PIL import Image
+    import pytesseract
+    OCR_AVAILABLE = True
+except ImportError:
+    OCR_AVAILABLE = False
+
 # ---------------------------------------------------------
-# REGEX PATTERNS (FIXED!)
+# REGEX PATTERNS
 # ---------------------------------------------------------
 
 ORG_RE = re.compile(r"\b(\d{9})\b")
@@ -13,7 +21,6 @@ ORG_IN_TEXT_RE = re.compile(
     flags=re.I
 )
 
-# FIXED: Less greedy pattern, stops at line breaks
 COMPANY_WITH_SUFFIX_RE = re.compile(
     r"([A-ZÆØÅ][A-Za-zÆØÅæøå0-9.\-&]{1,60}?)\s+(AS|ASA|ANS|DA|ENK|KS|BA)\b",
     flags=re.I
@@ -37,7 +44,7 @@ DEADLINE_RE = re.compile(
     flags=re.I
 )
 
-# Companies to COMPLETELY IGNORE (exact match)
+# Companies to IGNORE
 IGNORE_COMPANIES_EXACT = [
     "AS FORSIKRINGSMEGLING",
     "IF SKADEFORSIKRING NUF",
@@ -46,7 +53,6 @@ IGNORE_COMPANIES_EXACT = [
     "TRYG FORSIKRING",
 ]
 
-# Keywords in company name to ignore (partial match)
 IGNORE_KEYWORDS = [
     "FORSIKRINGSMEGLING",
     "INSURANCE",
@@ -61,15 +67,17 @@ VEHICLE_KEYWORDS = [
     "personbil",
     "registreringsnummer",
     "årsmodell",
+    "arbeidsmaskin",
+    "traktor",
 ]
 
 # ---------------------------------------------------------
-# SMART PDF TEXT EXTRACTION
+# PDF TEXT EXTRACTION WITH OCR FALLBACK
 # ---------------------------------------------------------
 
 def extract_text_from_pdf(pdf_bytes: bytes) -> str:
     """
-    SMART extraction: Finds vehicle section automatically.
+    Smart extraction with OCR fallback for image-based PDFs.
     """
 
     # Handle Streamlit UploadedFile objects
@@ -87,6 +95,7 @@ def extract_text_from_pdf(pdf_bytes: bytes) -> str:
         vehicle_section_found = False
         pages_after_vehicles = 0
         max_pages_to_read = 50
+        pages_with_no_text = 0
         
         with pdfplumber.open(BytesIO(pdf_bytes)) as pdf:
             total_pages = len(pdf.pages)
@@ -95,11 +104,39 @@ def extract_text_from_pdf(pdf_bytes: bytes) -> str:
             
             for i, page in enumerate(pdf.pages):
                 if i >= max_pages_to_read:
-                    st.warning(f"⚠️ Reached {max_pages_to_read} pages, stopping")
+                    st.warning(f"⚠️ Reached {max_pages_to_read} pages")
                     break
                 
+                # Try normal text extraction
                 extracted = page.extract_text()
-                if extracted:
+                
+                # If no text, try OCR
+                if not extracted or len(extracted.strip()) < 10:
+                    pages_with_no_text += 1
+                    
+                    # Try OCR if available and we've seen multiple pages with no text
+                    if OCR_AVAILABLE and pages_with_no_text >= 3 and i < 20:
+                        if pages_with_no_text == 3:
+                            st.warning("⚠️ **PDF appears to be image-based!**")
+                            st.info("🔄 Switching to OCR mode...")
+                        
+                        try:
+                            # Convert page to image and OCR it
+                            img = page.to_image(resolution=300)
+                            pil_img = img.original
+                            ocr_text = pytesseract.image_to_string(pil_img, lang='nor+eng')
+                            
+                            if ocr_text and len(ocr_text.strip()) > 10:
+                                extracted = ocr_text
+                                st.write(f"  ✓ Page {i+1}: {len(extracted)} chars (OCR)")
+                            else:
+                                st.write(f"  · Page {i+1}: No text (even with OCR)")
+                        except Exception as ocr_err:
+                            st.write(f"  · Page {i+1}: OCR failed - {ocr_err}")
+                    else:
+                        st.write(f"  · Page {i+1}: {len(extracted) if extracted else 0} chars")
+                
+                if extracted and len(extracted.strip()) > 10:
                     text += extracted + "\n"
                     
                     # Check for vehicle keywords
@@ -108,7 +145,7 @@ def extract_text_from_pdf(pdf_bytes: bytes) -> str:
                     
                     if has_vehicle_keywords:
                         if not vehicle_section_found:
-                            st.success(f"🚗 Vehicle section found at page {i+1}!")
+                            st.success(f"🚗 Vehicle section at page {i+1}!")
                             vehicle_section_found = True
                         pages_after_vehicles = 0
                         st.write(f"  ✓ Page {i+1}: {len(extracted)} chars (vehicles)")
@@ -117,14 +154,19 @@ def extract_text_from_pdf(pdf_bytes: bytes) -> str:
                             pages_after_vehicles += 1
                             st.write(f"  · Page {i+1}: {len(extracted)} chars")
                             
-                            # Stop if 5 pages without vehicle keywords
                             if pages_after_vehicles >= 5:
                                 st.success(f"✅ Vehicle section ended at page {i+1}")
                                 break
                         else:
-                            # Before vehicle section
                             if i < 10 or i % 5 == 0:
                                 st.write(f"  · Page {i+1}: {len(extracted)} chars")
+        
+        # Check if OCR is needed but not available
+        if pages_with_no_text >= total_pages * 0.5 and not OCR_AVAILABLE:
+            st.error("❌ **This PDF is image-based and needs OCR!**")
+            st.warning("OCR libraries not installed. Please install:")
+            st.code("pip install pytesseract pillow --break-system-packages")
+            st.code("# Also install Tesseract OCR: apt-get install tesseract-ocr")
         
         if text:
             st.success(f"✅ **Total: {len(text)} chars from {i+1} pages**")
@@ -140,13 +182,11 @@ def extract_text_from_pdf(pdf_bytes: bytes) -> str:
         return ""
 
 # ---------------------------------------------------------
-# FIELD EXTRACTION (FIXED COMPANY DETECTION!)
+# FIELD EXTRACTION
 # ---------------------------------------------------------
 
 def extract_fields_from_pdf(pdf_bytes: bytes) -> dict:
-    """
-    Extracts fields from PDF with IMPROVED company name detection.
-    """
+    """Extract fields from PDF."""
     
     st.write("=" * 50)
     st.write("🔍 **PDF PARSER**")
@@ -159,7 +199,7 @@ def extract_fields_from_pdf(pdf_bytes: bytes) -> dict:
         st.error("❌ No text extracted")
         return fields
 
-    # IMPORTANT: Store full text
+    # Store full text
     fields["pdf_text"] = txt
     st.write(f"✓ Added 'pdf_text' ({len(txt)} chars)")
 
@@ -174,10 +214,9 @@ def extract_fields_from_pdf(pdf_bytes: bytes) -> dict:
             fields["org_number"] = m2.group(1)
             st.write(f"✓ Org number: {m2.group(1)}")
 
-    # 2) Company name - IMPROVED FILTERING!
+    # 2) Company name - SKIP insurance brokers!
     st.write("🔍 Searching for company name...")
     
-    # Split text into lines to avoid matching across line breaks
     lines = txt.split('\n')
     candidates = []
     
@@ -186,28 +225,23 @@ def extract_fields_from_pdf(pdf_bytes: bytes) -> dict:
         for m3 in matches:
             company = m3.group(0).strip()
             
-            # Skip if too short
             if len(company) < 5:
                 continue
             
-            # Check exact ignore list
             if company.upper() in [c.upper() for c in IGNORE_COMPANIES_EXACT]:
                 st.write(f"  ⊘ Ignored (exact): {company}")
                 continue
             
-            # Check keyword ignore list
             if any(kw.upper() in company.upper() for kw in IGNORE_KEYWORDS):
                 st.write(f"  ⊘ Ignored (keyword): {company}")
                 continue
             
-            # This looks like a real company!
             candidates.append(company)
             st.write(f"  ✓ Candidate: {company}")
     
-    # Pick the first valid candidate
     if candidates:
         fields["company_name"] = candidates[0]
-        st.success(f"✅ Selected company: {candidates[0]}")
+        st.success(f"✅ Selected: {candidates[0]}")
     else:
         st.warning("⚠️ No company name found")
 
@@ -247,4 +281,4 @@ def extract_fields_from_pdf(pdf_bytes: bytes) -> dict:
 # ---------------------------------------------------------
 def run():
     st.title("📄 PDF Parser Module")
-    st.write("Smart extraction with improved company detection")
+    st.write("Smart extraction with OCR support for image-based PDFs")
