@@ -1,12 +1,12 @@
 # app_modules/Sheets/Fordon/mapping.py
 """
-COMPLETE FORDON EXTRACTION
-Extracts ALL vehicles with confirmed data fields:
-- Registration number
-- Make/Model/Year
-- Leasing (Column F) ✅
-- Annual mileage (Column G) ✅
-- Deductible (Column J) ✅
+FIXED FORDON EXTRACTION - V2
+Fixes:
+- Accurate vehicle counting (no duplicates)
+- Better model extraction (includes machine type)
+- Bonus extraction
+- Better leasing detection
+- Boat motor type extraction
 """
 
 import re
@@ -24,31 +24,25 @@ VEHICLE_ROWS = {
 VEHICLE_COLUMNS = {
     "registration": "B",
     "make_model_year": "C",
-    "insurance_sum": "D",        # Will add later
+    # D removed - not needed
     "coverage": "E",
-    "leasing": "F",              # ✅ EXTRACTING
-    "annual_mileage": "G",       # ✅ EXTRACTING
-    "odometer": "H",             # Will add later
-    "bonus": "I",                # Will add later
-    "deductible": "J",           # ✅ EXTRACTING
+    "leasing": "F",
+    "annual_mileage": "G",
+    # H removed - not needed
+    "bonus": "I",
+    "deductible": "J",
 }
 
-# ALL possible brands
-ALL_BRANDS = [
-    "VOLKSWAGEN", "FORD", "TOYOTA", "MERCEDES", "LAND ROVER", "CITROEN", 
-    "PEUGEOT", "VOLVO", "SCANIA", "MAN", "BMW", "AUDI", "NISSAN", "RENAULT",
-    "Doosan", "Hitachi", "Caterpillar", "Liebherr", "Sennebogen", "Komatsu", 
-    "Volvo", "JCB", "Bobcat", "Case", "John Deere", "New Holland", "Kubota",
-]
-
+CAR_BRANDS = ["VOLKSWAGEN", "FORD", "TOYOTA", "MERCEDES-BENZ", "MERCEDES", "LAND ROVER", "CITROEN", "PEUGEOT", "VOLVO", "SCANIA", "MAN", "BMW", "AUDI", "NISSAN", "RENAULT"]
 MACHINE_BRANDS = ["Doosan", "Hitachi", "Caterpillar", "Liebherr", "Sennebogen", "Komatsu", "Volvo", "JCB", "Bobcat", "Case", "John Deere", "New Holland", "Kubota"]
+MOPED_BRANDS = ["YAMAHA", "VESPA", "HONDA", "SUZUKI", "PIAGGIO", "APRILIA"]
+BOAT_BRANDS = ["YAMARIN", "BUSTER", "QUICKSILVER", "FINNMASTER", "BELLA", "PIONER"]
 
 
 def extract_vehicles_from_pdf(pdf_text: str) -> dict:
-    """Extract ALL vehicles with complete data."""
+    """Extract vehicles with NO DUPLICATES."""
     
-    st.write("🔍 **FORDON: Complete extraction**")
-    st.info("📝 Extracting vehicles with Leasing, Årlig kjørelengde, and Egenandel")
+    st.write("🔍 **FORDON: Fixed extraction v2**")
     
     if not pdf_text or len(pdf_text) < 1000:
         st.error("❌ PDF text too short!")
@@ -57,335 +51,216 @@ def extract_vehicles_from_pdf(pdf_text: str) -> dict:
     st.write(f"📄 PDF text: {len(pdf_text)} chars")
     st.write("---")
     
-    all_vehicles = []
-    
-    # STRATEGY 1: If format
+    # Extract using If pattern ONLY (most reliable)
     st.write("  🔎 If Skadeforsikring format")
-    if_vehicles = _extract_if_format(pdf_text)
-    if if_vehicles:
-        st.write(f"    ✅ {len(if_vehicles)} vehicles")
-        all_vehicles.extend(if_vehicles)
+    vehicles = _extract_if_format_complete(pdf_text)
+    
+    if vehicles:
+        st.write(f"    ✅ {len(vehicles)} vehicles")
     else:
         st.write("    ⊘ No matches")
-    
-    # STRATEGY 2: All brands (tractors/machines)
-    st.write("  🔎 All brands (tractors/machines/equipment)")
-    brand_vehicles = _extract_all_brands(pdf_text)
-    if brand_vehicles:
-        st.write(f"    ✅ {len(brand_vehicles)} items")
-        all_vehicles.extend(brand_vehicles)
-    else:
-        st.write("    ⊘ No brands")
-    
-    # STRATEGY 3: All registrations
-    st.write("  🔎 All registration numbers")
-    reg_vehicles = _extract_all_registrations(pdf_text)
-    if reg_vehicles:
-        st.write(f"    ✅ {len(reg_vehicles)} registrations")
-        all_vehicles.extend(reg_vehicles)
-    else:
-        st.write("    ⊘ No registrations")
-    
-    # Remove duplicates
-    unique = {}
-    for v in all_vehicles:
-        reg = v['registration']
-        if reg not in unique or len(v['make_model_year']) > len(unique[reg]['make_model_year']):
-            unique[reg] = v
-    
-    all_vehicles = list(unique.values())
+        return {}
     
     # Categorize
-    categorized = _categorize_all(all_vehicles)
+    categorized = _categorize_all(vehicles)
     
     st.write("---")
     st.write("📦 **Categorized:**")
-    for cat, vehicles in categorized.items():
-        if vehicles:
+    for cat, vehs in categorized.items():
+        if vehs:
             name = VEHICLE_ROWS[cat]['name']
-            st.write(f"  🚗 {name}: {len(vehicles)}")
-            for v in vehicles[:3]:
-                leasing_info = f" | Leasing: {v['leasing']}" if v['leasing'] else ""
-                st.write(f"    - {v['registration']} - {v['make_model_year']}{leasing_info}")
-            if len(vehicles) > 3:
-                st.write(f"    ... +{len(vehicles)-3} more")
+            st.write(f"  🚗 {name}: {len(vehs)}")
+            for v in vehs[:3]:
+                bonus_txt = f" | Bonus: {v['bonus']}" if v['bonus'] else ""
+                leasing_txt = f" | Leasing: {v['leasing']}" if v['leasing'] else ""
+                st.write(f"    - {v['registration']} - {v['make_model_year']}{leasing_txt}{bonus_txt}")
+            if len(vehs) > 3:
+                st.write(f"    ... +{len(vehs)-3} more")
     
     total = sum(len(v) for v in categorized.values())
-    st.success(f"✅ **TOTAL: {total} vehicles extracted**")
+    st.success(f"✅ **TOTAL: {total} vehicles**")
     
     return categorized
 
 
-def _extract_if_format(text: str) -> list:
-    """Extract If Skadeforsikring format with complete data."""
+def _extract_if_format_complete(text: str) -> list:
+    """
+    Extract If format with COMPLETE data.
+    Pattern: REG, Type, MAKE
+             MODEL (on next line sometimes)
+    """
     vehicles = []
-    pattern = r'([A-Z]{2}\d{5}),\s*(Varebil|Personbil|Lastebil|Moped|Traktor|Båt|Tilhenger),\s*([A-Z][A-Z\s]+?)(?:\s+(\d+)|$)'
+    seen_registrations = set()  # Track to avoid duplicates
+    
+    pattern = r'([A-Z]{2}\d{5}),\s*(Varebil|Personbil|Lastebil|Moped|Traktor|Båt|Tilhenger),\s*([A-Z][A-Z\s\-]+?)(?:\s+(\d+)|$)'
     
     for m in re.finditer(pattern, text, re.MULTILINE):
         reg = m.group(1).strip()
+        
+        # Skip if already found (avoid duplicates!)
+        if reg in seen_registrations:
+            continue
+        seen_registrations.add(reg)
+        
         vtype = m.group(2).strip()
         make = m.group(3).strip()
         
-        # Check next lines for continuation
+        # Get detailed section for this vehicle
         pos = m.start()
-        lines = text[pos:pos+200].split('\n')[1:3]
-        for line in lines:
+        # Get larger window (up to 1500 chars) to catch all details
+        window = text[pos:min(len(text), pos+1500)]
+        
+        # Extract model from next few lines
+        lines = window.split('\n')
+        model_parts = [make]
+        
+        for i, line in enumerate(lines[1:6]):  # Check next 5 lines
             line = line.strip()
-            if line and line[0].isupper() and not re.match(r'[A-Z]{2}\d{5}', line):
-                if not any(c.isdigit() for c in line[:10]):
-                    make += " " + line.split()[0]
+            if not line:
+                continue
+            
+            # Stop if we hit another registration or section header
+            if re.match(r'[A-Z]{2}\d{5}', line):
+                break
+            if line.startswith('===') or 'Årsmodell' in line:
+                break
+            
+            # Check if line looks like a model name
+            if line and line[0].isupper():
+                # Not just a field name
+                if ':' not in line[:20] and 'Kommune' not in line:
+                    # This is likely model continuation
+                    model_parts.append(line.split()[0] if line.split() else "")
+                    # Stop after getting model
                     break
         
-        year = _find_year(text, reg)
+        make_model = " ".join(model_parts).strip()
         
-        # Extract detailed info for this vehicle
-        leasing = _extract_leasing(text, reg)
-        mileage = _extract_mileage(text, reg)
-        deductible = _extract_deductible(text, reg)
+        # Extract year
+        year = _find_year_in_window(window, reg)
         
-        vehicles.append({
+        # Extract all detailed fields
+        leasing = _extract_leasing_in_window(window)
+        mileage = _extract_mileage_in_window(window)
+        deductible = _extract_deductible_in_window(window)
+        bonus = _extract_bonus(text, reg)  # Global search for bonus
+        motor_type = _extract_motor_type_in_window(window) if 'Båt' in vtype else ""
+        
+        # For boats, add motor type to model
+        if motor_type and 'Båt' in vtype:
+            make_model += f" ({motor_type})"
+        
+        vehicle = {
             "registration": reg,
             "vehicle_type": vtype,
-            "make_model_year": f"{make} {year}",
-            "insurance_sum": "",
-            "coverage": "kasko",
-            "leasing": leasing,              # ✅ EXTRACTED
-            "annual_mileage": mileage,       # ✅ EXTRACTED
-            "odometer": "",
-            "bonus": "",
-            "deductible": deductible,        # ✅ EXTRACTED
-        })
-    
-    return vehicles
-
-
-def _extract_all_brands(text: str) -> list:
-    """Extract all brands (machines/tractors)."""
-    vehicles = []
-    found_items = set()
-    
-    for brand in ALL_BRANDS:
-        pattern = rf'\b{brand}\b[^\n]{{0,100}}'
-        
-        for m in re.finditer(pattern, text, re.I):
-            line = m.group(0)
-            after_brand = line[len(brand):].strip()
-            
-            model_match = re.match(r'[^\w]*([0-9A-Z\s\-().]+?)(?:\s+20\d{2}|\s+kr|$)', after_brand, re.I)
-            if model_match:
-                model = model_match.group(1).strip()
-            else:
-                model = after_brand[:30].strip()
-            
-            model = re.sub(r'[-,].*$', '', model).strip()
-            model = re.sub(r'\s+(Uregistrert|arb|maskin|og|as|asa).*$', '', model, flags=re.I).strip()
-            
-            if not model or len(model) < 1:
-                model = ""
-            
-            identifier = f"{brand.lower()}_{model.lower()}"
-            if identifier in found_items:
-                continue
-            found_items.add(identifier)
-            
-            year_match = re.search(r'\b(20\d{2})\b', line)
-            if not year_match:
-                pos = m.start()
-                window = text[pos:pos+300]
-                year_match = re.search(r'\b(20\d{2})\b', window)
-            year = year_match.group(1) if year_match else "2024"
-            
-            is_machine = brand in MACHINE_BRANDS
-            
-            vehicles.append({
-                "registration": "Uregistrert" if is_machine else "Se beskrivelse",
-                "vehicle_type": "traktor" if is_machine else "bil",
-                "make_model_year": f"{brand} {model} {year}".strip(),
-                "insurance_sum": "",
-                "coverage": "kasko",
-                "leasing": "",
-                "annual_mileage": "" if is_machine else "16 000",
-                "odometer": "",
-                "bonus": "",
-                "deductible": "",
-            })
-    
-    return vehicles
-
-
-def _extract_all_registrations(text: str) -> list:
-    """Extract all registration numbers."""
-    vehicles = []
-    all_regs = re.findall(r'\b([A-Z]{2}\s?\d{5})\b', text)
-    
-    for reg in set(all_regs):
-        reg_clean = reg.replace(" ", "")
-        
-        pos = text.find(reg)
-        if pos == -1:
-            continue
-        
-        window = text[max(0, pos-200):min(len(text), pos+200)]
-        
-        make_model = None
-        year = None
-        
-        for brand in ALL_BRANDS:
-            if brand.upper() in window.upper():
-                brand_pos = window.upper().find(brand.upper())
-                after_brand = window[brand_pos+len(brand):].strip()
-                
-                model_match = re.match(r'([A-Z0-9\s\-().]+?)(?:\s+20\d{2}|\s+\d{4,}|\s+kr|$)', after_brand, re.I)
-                if model_match:
-                    model = model_match.group(1).strip()
-                    make_model = f"{brand} {model}"
-                else:
-                    make_model = brand
-                
-                year_match = re.search(r'\b(20\d{2})\b', window)
-                if year_match:
-                    year = year_match.group(1)
-                
-                break
-        
-        if not make_model:
-            before_reg = window[:window.find(reg)].strip()
-            words = before_reg.split()[-5:]
-            make_model = " ".join(words)
-            if len(make_model) < 3:
-                continue
-        
-        if not year:
-            year = "2024"
-        
-        # Extract detailed info
-        leasing = _extract_leasing(text, reg_clean)
-        mileage = _extract_mileage(text, reg_clean)
-        deductible = _extract_deductible(text, reg_clean)
-        
-        vehicles.append({
-            "registration": reg_clean,
-            "vehicle_type": "bil",
             "make_model_year": f"{make_model} {year}",
-            "insurance_sum": "",
             "coverage": "kasko",
-            "leasing": leasing,              # ✅ EXTRACTED
-            "annual_mileage": mileage,       # ✅ EXTRACTED
-            "odometer": "",
-            "bonus": "",
-            "deductible": deductible,        # ✅ EXTRACTED
-        })
+            "leasing": leasing,
+            "annual_mileage": mileage,
+            "bonus": bonus,
+            "deductible": deductible,
+        }
+        
+        vehicles.append(vehicle)
     
     return vehicles
 
 
-# ============================================================================
-# EXTRACTION HELPERS FOR CONFIRMED FIELDS
-# ============================================================================
+def _find_year_in_window(window: str, reg: str) -> str:
+    """Find year in window."""
+    year_match = re.search(r'Årsmodell:\s*(\d{4})', window)
+    if year_match:
+        return year_match.group(1)
+    
+    # Fallback: any 4-digit year
+    year_match = re.search(r'\b(20[12]\d)\b', window)
+    if year_match:
+        return year_match.group(1)
+    
+    return "2024"
 
-def _find_year(text: str, reg: str) -> str:
-    """Find year for vehicle."""
-    pattern = rf'{reg}.*?(?:Årsmodell|År|registrert):\s*(\d{{4}})'
-    m = re.search(pattern, text, re.DOTALL)
-    return m.group(1) if m else "2024"
 
-
-def _extract_leasing(text: str, reg: str) -> str:
-    """
-    ✅ EXTRACT LEASING INFO
-    Looks for: Tredjemannsinteresse/leasing or leasing company names
-    """
-    if reg in ["Uregistrert", "Se beskrivelse"]:
-        return ""
+def _extract_leasing_in_window(window: str) -> str:
+    """Extract leasing from window."""
+    # Look for exact leasing line
+    leasing_match = re.search(r'Tredjemannsinteresse/leasing:\s*([A-ZÆØÅa-zæøå0-9\s]+?)(?:\n|$)', window, re.I)
+    if leasing_match:
+        company = leasing_match.group(1).strip()
+        return company if company else "Ja"
     
-    pos = text.find(reg)
-    if pos == -1:
-        return ""
-    
-    # Look in a wide window around the registration
-    window = text[max(0, pos-500):min(len(text), pos+1000)]
-    
-    # Known leasing companies
-    leasing_companies = [
-        "Sparebank 1",
-        "Nordea Finans",
-        "Santander",
-        "DNB Finans",
-        "BRAGE FINANS",
-        "Handelsbanken",
-        "BN Bank",
-    ]
-    
-    for company in leasing_companies:
+    # Check known companies
+    companies = ["Sparebank 1", "Nordea Finans", "Santander", "DNB Finans", "BRAGE FINANS", "Handelsbanken", "BN Bank"]
+    for company in companies:
         if company in window:
             return company
     
-    # Check for "Tredjemannsinteresse/leasing"
-    if re.search(r'Tredjemannsinteresse/leasing', window, re.I):
-        return "Ja"
-    
+    # Generic check
     if re.search(r'(leasing|tredjemannsinteresse)', window, re.I):
         return "Ja"
     
     return ""
 
 
-def _extract_mileage(text: str, reg: str) -> str:
-    """
-    ✅ EXTRACT ANNUAL MILEAGE
-    Looks for: "Kjørelengde: 16 000 km" or similar
-    """
-    if reg in ["Uregistrert", "Se beskrivelse"]:
-        return ""
-    
-    pos = text.find(reg)
-    if pos == -1:
-        return "16 000"  # Default
-    
-    window = text[max(0, pos-500):min(len(text), pos+1000)]
-    
-    # Pattern: "Kjørelengde: 16 000 km" or "16 000 km"
-    mileage_match = re.search(r'(?:Kjørelengde|kjørelengde):\s*(\d+\s?\d+)\s*km', window)
+def _extract_mileage_in_window(window: str) -> str:
+    """Extract mileage from window."""
+    mileage_match = re.search(r'Kjørelengde:\s*(\d+\s?\d+)\s*km', window, re.I)
     if mileage_match:
         return mileage_match.group(1).replace(" ", " ")
     
-    # Fallback: look for any number followed by km
+    # Fallback
     mileage_match = re.search(r'(\d+\s?\d+)\s*km', window)
     if mileage_match:
         return mileage_match.group(1).replace(" ", " ")
     
-    return "16 000"  # Default
+    return ""
 
 
-def _extract_deductible(text: str, reg: str) -> str:
+def _extract_deductible_in_window(window: str) -> str:
+    """Extract deductible from window."""
+    # Most specific pattern first
+    deduct_match = re.search(r'Egenandel\s*-\s*Skader på eget kjøretøy:\s*(\d+\s?\d+)\s*kr', window)
+    if deduct_match:
+        return deduct_match.group(1).replace(" ", " ")
+    
+    # Generic egenandel
+    deduct_match = re.search(r'Egenandel[:\s-]+(\d+\s?\d+)\s*kr', window)
+    if deduct_match:
+        return deduct_match.group(1).replace(" ", " ")
+    
+    return ""
+
+
+def _extract_bonus(text: str, reg: str) -> str:
     """
-    ✅ EXTRACT DEDUCTIBLE (EGENANDEL)
-    Looks for: "Egenandel - Skader på eget kjøretøy: 12 000 kr"
+    Extract bonus information.
+    Usually in separate section: "AB12345: 60% bonus"
     """
-    if reg in ["Uregistrert", "Se beskrivelse"]:
-        return ""
+    # Search globally for this registration's bonus
+    bonus_match = re.search(rf'{reg}:\s*(\d+)%\s*bonus', text, re.I)
+    if bonus_match:
+        return bonus_match.group(1) + "%"
     
-    pos = text.find(reg)
-    if pos == -1:
-        return "8 000"  # Default
+    # Alternative format
+    bonus_match = re.search(rf'{reg}.*?bonus[:\s]*(\d+)%', text, re.I | re.DOTALL)
+    if bonus_match:
+        return bonus_match.group(1) + "%"
     
-    window = text[max(0, pos-500):min(len(text), pos+1500)]
-    
-    # Pattern: "Egenandel - Skader på eget kjøretøy: 12 000 kr"
-    deductible_match = re.search(r'Egenandel\s*-\s*Skader på eget kjøretøy:\s*(\d+\s?\d+)\s*kr', window)
-    if deductible_match:
-        return deductible_match.group(1).replace(" ", " ")
-    
-    # Fallback: any "Egenandel:" followed by number
-    deductible_match = re.search(r'Egenandel[:\s]+(\d+\s?\d+)\s*kr', window)
-    if deductible_match:
-        return deductible_match.group(1).replace(" ", " ")
-    
-    return "8 000"  # Default
+    return ""
+
+
+def _extract_motor_type_in_window(window: str) -> str:
+    """Extract boat motor type."""
+    if re.search(r'innenbords\s*motor', window, re.I):
+        return "innenbords motor"
+    if re.search(r'utenbords\s*motor', window, re.I):
+        return "utenbords motor"
+    if re.search(r'påhengsmotor', window, re.I):
+        return "påhengsmotor"
+    return ""
 
 
 def _categorize_all(vehicles: list) -> dict:
-    """Categorize vehicles by type."""
+    """Categorize by type."""
     categorized = {
         "car": [],
         "trailer": [],
@@ -397,15 +272,14 @@ def _categorize_all(vehicles: list) -> dict:
     for v in vehicles:
         vtype = v.get("vehicle_type", "").lower()
         make = v.get("make_model_year", "").lower()
-        reg = v.get("registration", "")
         
-        if "tilhenger" in vtype or "trailer" in make:
+        if "tilhenger" in vtype:
             cat = "trailer"
-        elif "moped" in vtype or "moped" in make:
+        elif "moped" in vtype:
             cat = "moped"
-        elif "traktor" in vtype or "uregistrert" in reg.lower() or any(b.lower() in make for b in MACHINE_BRANDS):
+        elif "traktor" in vtype or "lastebil" in vtype:
             cat = "tractor"
-        elif "båt" in vtype or "boat" in make:
+        elif "båt" in vtype or "boat" in vtype:
             cat = "boat"
         else:
             cat = "car"
@@ -416,10 +290,10 @@ def _categorize_all(vehicles: list) -> dict:
 
 
 def transform_data(extracted: dict) -> dict:
-    """Transform to Excel cells."""
+    """Transform to Excel."""
     
     st.write("🔄 **FORDON: transform_data**")
-    st.info("✅ Extracting: Leasing, Årlig kjørelengde, Egenandel")
+    st.info("✅ Extracting: Leasing, Årlig kjørelengde, Bonus, Egenandel")
     
     out = {}
     pdf_text = extracted.get("pdf_text", "")
@@ -457,23 +331,21 @@ def transform_data(extracted: dict) -> dict:
             for field, column in VEHICLE_COLUMNS.items():
                 out[f"{column}{row}"] = vehicle.get(field, "")
             
-            # Show what was extracted
-            leasing = vehicle.get('leasing', '')
-            mileage = vehicle.get('annual_mileage', '')
-            deductible = vehicle.get('deductible', '')
-            
+            # Show details
             details = f"{vehicle['registration']} - {vehicle['make_model_year']}"
-            if leasing:
-                details += f" | Leasing: {leasing}"
-            if mileage:
-                details += f" | {mileage} km"
-            if deductible:
-                details += f" | Egenandel: {deductible}"
+            if vehicle.get('leasing'):
+                details += f" | Leasing: {vehicle['leasing']}"
+            if vehicle.get('annual_mileage'):
+                details += f" | {vehicle['annual_mileage']} km"
+            if vehicle.get('bonus'):
+                details += f" | Bonus: {vehicle['bonus']}"
+            if vehicle.get('deductible'):
+                details += f" | Egenandel: {vehicle['deductible']}"
             
             st.write(f"    Row {row}: {details}")
             total += 1
     
-    st.success(f"✅ Mapped {total} vehicles with complete data")
+    st.success(f"✅ Mapped {total} vehicles")
     
     return out
 
