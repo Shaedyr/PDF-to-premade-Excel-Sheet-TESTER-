@@ -196,3 +196,4 @@ def _extract_motor_type(section: str) -> str:
         return "påhengsmotor"
     
     return ""
+ 
