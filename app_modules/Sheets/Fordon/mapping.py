@@ -4,16 +4,11 @@ FORDON SHEET - MAIN ORCHESTRATOR
 
 This file coordinates all vehicle extractors.
 Each insurance company has its own extractor in extractors/
-
-To add a new insurance company:
-1. Create extractors/company_name_format.py
-2. Import it here
-3. Add it to the extraction attempts below
 """
 
 import streamlit as st
-from .extractors.if_format import extract_if_vehicles
-from .extractors.gjensidige_format import extract_gjensidige_vehicles
+from .extractors.if_skadeforsikring import extract_if_vehicles
+from .extractors.gjensidige import extract_gjensidige_vehicles
 
 
 VEHICLE_ROWS = {
@@ -53,11 +48,7 @@ def extract_vehicles_from_pdf(pdf_text: str) -> dict:
     
     all_vehicles = []
     
-    # ==========================================
-    # Try each extractor
-    # ==========================================
-    
-    # 1. If Skadeforsikring
+    # Try If Skadeforsikring
     st.write("  🔎 **If Skadeforsikring**")
     try:
         if_vehicles = extract_if_vehicles(pdf_text)
@@ -69,7 +60,7 @@ def extract_vehicles_from_pdf(pdf_text: str) -> dict:
     except Exception as e:
         st.write(f"    ❌ Error: {e}")
     
-    # 2. Gjensidige
+    # Try Gjensidige
     st.write("  🔎 **Gjensidige**")
     try:
         gjen_vehicles = extract_gjensidige_vehicles(pdf_text)
@@ -81,31 +72,12 @@ def extract_vehicles_from_pdf(pdf_text: str) -> dict:
     except Exception as e:
         st.write(f"    ❌ Error: {e}")
     
-    # ==========================================
-    # Add new extractors here:
-    # ==========================================
-    # st.write("  🔎 **Tryg**")
-    # try:
-    #     from .extractors.tryg_format import extract_tryg_vehicles
-    #     tryg_vehicles = extract_tryg_vehicles(pdf_text)
-    #     if tryg_vehicles:
-    #         st.write(f"    ✅ {len(tryg_vehicles)} vehicles")
-    #         all_vehicles.extend(tryg_vehicles)
-    #     else:
-    #         st.write("    ⊘ No matches")
-    # except Exception as e:
-    #     st.write(f"    ❌ Error: {e}")
-    
-    # ==========================================
-    # Process results
-    # ==========================================
-    
     if not all_vehicles:
         st.error("❌ No vehicles found!")
         st.warning("💡 Need a new insurance company? Add an extractor in extractors/")
         return {}
     
-    # Remove duplicates (keep first occurrence)
+    # Remove duplicates
     unique = {}
     for v in all_vehicles:
         reg = v['registration']
@@ -114,7 +86,7 @@ def extract_vehicles_from_pdf(pdf_text: str) -> dict:
     
     all_vehicles = list(unique.values())
     
-    # Categorize by vehicle type
+    # Categorize
     categorized = _categorize_vehicles(all_vehicles)
     
     # Display summary
@@ -125,7 +97,6 @@ def extract_vehicles_from_pdf(pdf_text: str) -> dict:
             name = VEHICLE_ROWS[cat]['name']
             st.write(f"  🚗 **{name}**: {len(vehs)}")
             
-            # Show first 3
             for v in vehs[:3]:
                 extras = []
                 if v.get('leasing'):
@@ -161,7 +132,6 @@ def _categorize_vehicles(vehicles: list) -> dict:
         vtype = v.get("vehicle_type", "").lower()
         reg = v.get("registration", "").lower()
         
-        # Determine category
         if "tilhenger" in vtype:
             cat = "trailer"
         elif "moped" in vtype:
@@ -179,15 +149,7 @@ def _categorize_vehicles(vehicles: list) -> dict:
 
 
 def transform_data(extracted: dict) -> dict:
-    """
-    Transform extracted vehicle data to Excel cell mappings.
-    
-    Args:
-        extracted: Dictionary with 'pdf_text' key
-        
-    Returns:
-        Dictionary mapping Excel cells to values
-    """
+    """Transform extracted vehicle data to Excel cell mappings."""
     
     st.write("🔄 **FORDON: transform_data**")
     st.info("✅ Fields: Leasing, Årlig kjørelengde, Bonus, Egenandel")
@@ -196,17 +158,15 @@ def transform_data(extracted: dict) -> dict:
     pdf_text = extracted.get("pdf_text", "")
     
     if not pdf_text:
-        st.error("❌ No pdf_text in extracted data!")
+        st.error("❌ No pdf_text!")
         return out
     
-    # Extract vehicles
     categorized = extract_vehicles_from_pdf(pdf_text)
     
     if not categorized:
         st.warning("⚠️ No vehicles extracted")
         return out
     
-    # Map to Excel cells
     st.write("---")
     st.write("📋 **Mapping to Excel:**")
     
@@ -224,18 +184,13 @@ def transform_data(extracted: dict) -> dict:
         for idx, vehicle in enumerate(vehicles):
             row = start + idx
             
-            # Check if we exceed available rows
             if row > end:
-                st.warning(f"  ⚠️ Too many {name}! Max {end-start+1} allowed, got {len(vehicles)}")
+                st.warning(f"  ⚠️ Too many {name}!")
                 break
             
-            # Map each field to its column
             for field, column in VEHICLE_COLUMNS.items():
-                cell = f"{column}{row}"
-                value = vehicle.get(field, "")
-                out[cell] = value
+                out[f"{column}{row}"] = vehicle.get(field, "")
             
-            # Show what was mapped
             details = f"{vehicle['registration']} - {vehicle['make_model_year']}"
             if vehicle.get('leasing'):
                 details += f" | Leasing: {vehicle['leasing']}"
@@ -254,5 +209,4 @@ def transform_data(extracted: dict) -> dict:
     return out
 
 
-# This is required for the sheet system
 CELL_MAP = {}
