@@ -1,4 +1,4 @@
-# app_modules/Sheets/Fordon/extractors/if_format.py
+# app_modules/Sheets/Fordon/extractors/if_skadeforsikring.py
 """
 IF SKADEFORSIKRING FORMAT EXTRACTOR
 
