@@ -12,7 +12,7 @@ except ImportError:
 
 
 def extract_text_from_pdf(pdf_bytes: bytes) -> str:
-    """Extract text from PDF - with OCR fallback."""
+    """Extract text from PDF with OCR support."""
 
     # Handle Streamlit UploadedFile objects
     if hasattr(pdf_bytes, 'read'):
@@ -45,9 +45,9 @@ def extract_text_from_pdf(pdf_bytes: bytes) -> str:
                 if not extracted or len(extracted.strip()) < 10:
                     pages_with_no_text += 1
                     
-                    if OCR_AVAILABLE and pages_with_no_text >= 3 and i < 20:
+                    if OCR_AVAILABLE and pages_with_no_text >= 3 and i < 25:
                         if pages_with_no_text == 3:
-                            st.warning("⚠️ **Using OCR...**")
+                            st.warning("⚠️ **PDF is image-based - using OCR...**")
                         
                         try:
                             img = page.to_image(resolution=300)
@@ -57,8 +57,8 @@ def extract_text_from_pdf(pdf_bytes: bytes) -> str:
                             if ocr_text and len(ocr_text.strip()) > 10:
                                 extracted = ocr_text
                                 st.write(f"  ✓ Page {i+1}: {len(extracted)} chars (OCR)")
-                        except Exception:
-                            pass
+                        except Exception as ocr_err:
+                            st.write(f"  · Page {i+1}: OCR failed - {ocr_err}")
                 
                 if extracted and len(extracted.strip()) > 10:
                     text += extracted + "\n"
@@ -66,6 +66,7 @@ def extract_text_from_pdf(pdf_bytes: bytes) -> str:
         # Check if OCR needed but not available
         if pages_with_no_text >= total_pages * 0.5 and not OCR_AVAILABLE:
             st.error("❌ **PDF is image-based - OCR not installed!**")
+            st.info("Install: `pip install pytesseract pillow` + tesseract-ocr")
         
         if text:
             st.success(f"✅ **Extracted {len(text)} characters**")
@@ -76,13 +77,15 @@ def extract_text_from_pdf(pdf_bytes: bytes) -> str:
 
     except Exception as e:
         st.error(f"❌ Error: {e}")
+        import traceback
+        st.code(traceback.format_exc())
         return ""
 
 
 def extract_fields_from_pdf(pdf_bytes: bytes) -> dict:
     """
-    MINIMAL VERSION - ONLY extracts pdf_text!
-    All other fields come from BRREG search.
+    Extract ONLY pdf_text from PDF.
+    All other fields (company name, address, etc.) come from BRREG.
     """
     
     st.write("=" * 50)
@@ -96,13 +99,13 @@ def extract_fields_from_pdf(pdf_bytes: bytes) -> dict:
         st.error("❌ No text extracted")
         return fields
 
-    # ONLY store the text - nothing else!
+    # ONLY store the text
     fields["pdf_text"] = txt
     st.write(f"✓ Added 'pdf_text' ({len(txt)} chars)")
 
     st.write("=" * 50)
-    st.success(f"✅ PDF text extracted")
-    st.info("💡 Company info comes from BRREG, not PDF")
+    st.success(f"✅ PDF text extracted successfully")
+    st.info("💡 Company info comes from BRREG search")
     st.write("=" * 50)
 
     return fields
@@ -110,5 +113,5 @@ def extract_fields_from_pdf(pdf_bytes: bytes) -> dict:
 
 def run():
     st.title("📄 PDF Parser Module")
-    st.write("Extracts text from PDFs for vehicle data")
-    st.info("💡 All company info comes from BRREG search!")
+    st.write("Extracts text from PDFs (with OCR support)")
+    st.info("💡 All company info comes from BRREG!")
