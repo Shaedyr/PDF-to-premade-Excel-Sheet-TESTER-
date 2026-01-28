@@ -49,10 +49,9 @@ def extract_gjensidige_vehicles(pdf_text: str) -> list:
 
 def _extract_registered_cars(pdf_text: str, seen: set) -> list:
     """
-    Extract registered cars.
-    
-    Format: MAKE MODEL YEAR REG (with space in reg)
-    Example: "VOLKSWAGEN TRANSPORTER 2020 BU 21895"
+    Extract registered cars from TWO formats:
+    1. "VOLKSWAGEN TRANSPORTER 2020 BU 21895"
+    2. Table rows with registration numbers
     """
     vehicles = []
     
@@ -62,11 +61,11 @@ def _extract_registered_cars(pdf_text: str, seen: set) -> list:
         "CITROEN", "PEUGEOT", "VOLVO", "BMW", "AUDI", "NISSAN", "RENAULT"
     ]
     
-    # Pattern: BRAND + text + YEAR + REG (with space)
+    # FORMAT 1: BRAND + text + YEAR + REG (with space)
     brands_pattern = '|'.join(brands)
-    pattern = rf'({brands_pattern})\s+([A-Z0-9\s\-().]+?)\s+(20\d{{2}})\s+([A-Z]{{2}}\s+\d{{5}})'
+    pattern1 = rf'({brands_pattern})\s+([A-Z0-9\s\-().]+?)\s+(20\d{{2}})\s+([A-Z]{{2}}\s+\d{{5}})'
     
-    for match in re.finditer(pattern, pdf_text):
+    for match in re.finditer(pattern1, pdf_text):
         make = match.group(1).strip()
         model = match.group(2).strip()
         year = match.group(3).strip()
@@ -93,10 +92,75 @@ def _extract_registered_cars(pdf_text: str, seen: set) -> list:
             "make_model_year": f"{make} {model} {year}",
             "coverage": "kasko",
             "leasing": leasing,
-            "annual_mileage": "",  # Not in this format
+            "annual_mileage": "",
             "bonus": bonus,
-            "deductible": "",  # Not in this format
+            "deductible": "",
         })
+    
+    # FORMAT 2: All registration numbers (table format)
+    # Pattern: Any registration number
+    all_regs = re.findall(r'\b([A-Z]{2}\s?\d{5})\b', pdf_text)
+    
+    for reg_raw in all_regs:
+        reg = reg_raw.replace(" ", "")
+        
+        # Skip if already found
+        if reg in seen:
+            continue
+        
+        # Find this registration in context
+        reg_pattern = reg_raw.replace(" ", r"\s?")
+        match = re.search(rf'{reg_pattern}', pdf_text)
+        if not match:
+            continue
+        
+        pos = match.start()
+        # Get larger window (1000 chars) to find make/model/year
+        window = pdf_text[max(0, pos-500):min(len(pdf_text), pos+500)]
+        
+        # Try to find brand in window
+        found_brand = None
+        found_model = None
+        found_year = None
+        
+        for brand in brands:
+            if brand in window:
+                found_brand = brand
+                # Try to extract model after brand
+                brand_match = re.search(rf'{brand}\s+([A-Z][A-Za-z0-9\s\-().]+?)(?:\s+20\d{{2}}|\s*\n|$)', window)
+                if brand_match:
+                    found_model = brand_match.group(1).strip()
+                    # Clean model name
+                    found_model = re.sub(r'\s+(Reg\.år|TFA|Årspremie).*$', '', found_model).strip()
+                break
+        
+        # Try to find year
+        year_match = re.search(r'\b(20\d{2})\b', window)
+        if year_match:
+            found_year = year_match.group(1)
+        
+        # If we found at least brand and year, add it
+        if found_brand and found_year:
+            if not found_model:
+                found_model = ""
+            
+            seen.add(reg)
+            
+            leasing = _extract_leasing(window, pdf_text, reg)
+            bonus = _extract_bonus(pdf_text, reg)
+            
+            make_model = f"{found_brand} {found_model}".strip()
+            
+            vehicles.append({
+                "registration": reg,
+                "vehicle_type": "bil",
+                "make_model_year": f"{make_model} {found_year}",
+                "coverage": "kasko",
+                "leasing": leasing,
+                "annual_mileage": "",
+                "bonus": bonus,
+                "deductible": "",
+            })
     
     return vehicles
 
