@@ -33,6 +33,8 @@ def extract_gjensidige_vehicles(pdf_text: str) -> list:
     Returns:
         List of vehicle dictionaries
     """
+    import streamlit as st
+    
     vehicles = []
     seen_registrations = set()
     
@@ -40,8 +42,34 @@ def extract_gjensidige_vehicles(pdf_text: str) -> list:
     cars = _extract_registered_cars(pdf_text, seen_registrations)
     vehicles.extend(cars)
     
-    # Extract unregistered tractors/machines
+    # Extract unregistered tractors/machines - WITH DEBUG
+    st.write("  🔎 **DEBUG: Looking for tractors...**")
+    
+    # Check if text contains tractor keywords
+    has_uregistrert = 'uregistrert' in pdf_text.lower()
+    has_traktor = 'traktor' in pdf_text.lower()
+    st.write(f"    - 'uregistrert' in PDF: {has_uregistrert}")
+    st.write(f"    - 'traktor' in PDF: {has_traktor}")
+    
+    # Check for each brand
+    found_brands = []
+    for brand in MACHINE_BRANDS:
+        if brand in pdf_text or brand.lower() in pdf_text.lower():
+            found_brands.append(brand)
+    
+    if found_brands:
+        st.write(f"    - Found brands: {', '.join(found_brands)}")
+    else:
+        st.write("    - ⚠️ No machine brands found in PDF!")
+    
+    # Show a sample of text containing "Uregistrert"
+    if has_uregistrert:
+        idx = pdf_text.lower().find('uregistrert')
+        sample = pdf_text[max(0, idx-50):idx+150]
+        st.write(f"    - Sample text: `{sample[:100]}...`")
+    
     tractors = _extract_unregistered_tractors(pdf_text)
+    st.write(f"    - **Extracted: {len(tractors)} tractors**")
     vehicles.extend(tractors)
     
     return vehicles
