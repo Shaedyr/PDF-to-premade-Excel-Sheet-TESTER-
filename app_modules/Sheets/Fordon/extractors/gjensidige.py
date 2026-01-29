@@ -169,24 +169,73 @@ def _extract_unregistered_tractors(pdf_text: str) -> list:
     """
     Extract unregistered tractors/machines.
     
-    Format: "Uregistrert traktor og arb.maskin - Doosan 300 DX 2023"
+    Formats:
+    - "Uregistrert traktor og arb.maskin - Doosan 300 DX 2023 - Uregistrert"
+    - "Doosan 300 DX" (in context with "Uregistrert")
     """
     vehicles = []
     seen_machines = set()
     
+    # Look for each brand in the context of "Uregistrert"
     for brand in MACHINE_BRANDS:
-        # Pattern: Uregistrert + brand + model (+ optional year)
-        pattern = rf'Uregistrert.*?{brand}\s+([0-9A-Z\s]+?)(?:\s+(20\d{{2}}))?(?:\s*-|\n|$)'
+        # More flexible pattern: just find brand name anywhere near "Uregistrert"
+        # Pattern 1: Explicit "Uregistrert traktor" line
+        pattern1 = rf'Uregistrert.*?{brand}\s+([0-9A-Z\s\-]+?)(?:\s+(20\d{{2}}))?(?:\s*-|$)'
         
-        for match in re.finditer(pattern, pdf_text, re.I):
-            model = match.group(1).strip()
+        for match in re.finditer(pattern1, pdf_text, re.IGNORECASE | re.DOTALL):
+            model_raw = match.group(1).strip()
+            year = match.group(2) if match.group(2) else None
+            
+            # Clean model name aggressively
+            model = model_raw
+            model = re.sub(r'\s*-\s*Uregistrert.*$', '', model, flags=re.I).strip()
+            model = re.sub(r'\s+(arb\.?|maskin|og|as|asa).*$', '', model, flags=re.I).strip()
+            model = re.sub(r'\s*\n.*$', '', model).strip()  # Remove line breaks
+            
+            # If no year found in match, search nearby
+            if not year:
+                # Search in a window around the match
+                pos = match.start()
+                window = pdf_text[pos:pos+200]
+                year_match = re.search(r'\b(20\d{2})\b', window)
+                year = year_match.group(1) if year_match else "2024"
+            
+            # Skip if model is empty or too short
+            if not model or len(model) < 2:
+                continue
+            
+            # Create unique identifier
+            machine_id = f"{brand.lower()}_{model.lower()}_{year}"
+            if machine_id in seen_machines:
+                continue
+            seen_machines.add(machine_id)
+            
+            vehicles.append({
+                "registration": "Uregistrert",
+                "vehicle_type": "traktor",
+                "make_model_year": f"{brand} {model} {year}",
+                "coverage": "kasko",
+                "leasing": "",
+                "annual_mileage": "",
+                "bonus": "",
+                "deductible": "",
+            })
+        
+        # Pattern 2: Brand appears in "Forsikringsoversikt" section
+        # Look for brand in context of tractor insurance
+        pattern2 = rf'traktor.*?{brand}\s+([0-9A-Z\s]+?)(?:\s+(20\d{{2}}))?(?:\s*-|$)'
+        
+        for match in re.finditer(pattern2, pdf_text, re.IGNORECASE):
+            model_raw = match.group(1).strip()
             year = match.group(2) if match.group(2) else "2024"
             
-            # Clean model (remove trailing junk)
+            model = model_raw
             model = re.sub(r'\s*-\s*Uregistrert.*$', '', model, flags=re.I).strip()
             model = re.sub(r'\s+(arb|maskin|og).*$', '', model, flags=re.I).strip()
             
-            # Create unique identifier
+            if not model or len(model) < 2:
+                continue
+            
             machine_id = f"{brand.lower()}_{model.lower()}_{year}"
             if machine_id in seen_machines:
                 continue
