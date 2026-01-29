@@ -41,12 +41,13 @@ def extract_text_from_pdf(pdf_bytes: bytes) -> str:
                 # Try normal text extraction
                 extracted = page.extract_text()
                 
-                # If no text, try OCR
+                # If no text, try OCR immediately
                 if not extracted or len(extracted.strip()) < 10:
                     pages_with_no_text += 1
                     
-                    if OCR_AVAILABLE and pages_with_no_text >= 3 and i < 25:
-                        if pages_with_no_text == 3:
+                    # Start OCR immediately if first page has no text
+                    if OCR_AVAILABLE and pages_with_no_text >= 1 and i < 25:
+                        if pages_with_no_text == 1:
                             st.warning("⚠️ **PDF is image-based - using OCR...**")
                         
                         try:
