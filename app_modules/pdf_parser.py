@@ -12,7 +12,7 @@ except ImportError:
 
 
 def extract_text_from_pdf(pdf_bytes: bytes) -> str:
-    """Extract text from PDF with OCR support."""
+    """Extract text from PDF with OCR support - ALWAYS OCRs if needed."""
 
     # Handle Streamlit UploadedFile objects
     if hasattr(pdf_bytes, 'read'):
@@ -27,11 +27,12 @@ def extract_text_from_pdf(pdf_bytes: bytes) -> str:
     try:
         text = ""
         max_pages_to_read = 50
-        pages_with_no_text = 0
         
         with pdfplumber.open(BytesIO(pdf_bytes)) as pdf:
             total_pages = len(pdf.pages)
             st.success(f"✅ PDF: {total_pages} pages")
+            
+            ocr_started = False
             
             for i, page in enumerate(pdf.pages):
                 if i >= max_pages_to_read:
@@ -41,17 +42,15 @@ def extract_text_from_pdf(pdf_bytes: bytes) -> str:
                 # Try normal text extraction
                 extracted = page.extract_text()
                 
-                # If no text, try OCR immediately
+                # If no text or very little text, use OCR
                 if not extracted or len(extracted.strip()) < 10:
-                    pages_with_no_text += 1
                     
-                    # Start OCR immediately if first page has no text
-                    if OCR_AVAILABLE and i < 25:
-                        if pages_with_no_text == 1:
+                    if OCR_AVAILABLE:
+                        if not ocr_started:
                             st.warning("⚠️ **PDF is image-based - using OCR...**")
+                            ocr_started = True
                         
                         try:
-                            st.write(f"  🔄 OCR'ing page {i+1}...")
                             img = page.to_image(resolution=300)
                             pil_img = img.original
                             ocr_text = pytesseract.image_to_string(pil_img, lang='nor+eng')
@@ -60,20 +59,21 @@ def extract_text_from_pdf(pdf_bytes: bytes) -> str:
                                 extracted = ocr_text
                                 st.write(f"  ✓ Page {i+1}: {len(extracted)} chars (OCR)")
                             else:
-                                st.write(f"  ⊘ Page {i+1}: OCR returned empty")
+                                st.write(f"  ⊘ Page {i+1}: OCR returned {len(ocr_text.strip()) if ocr_text else 0} chars")
                         except Exception as ocr_err:
-                            st.write(f"  ✗ Page {i+1}: OCR failed - {ocr_err}")
+                            st.write(f"  ✗ Page {i+1}: OCR error - {str(ocr_err)[:50]}")
                     else:
-                        st.write(f"  ⊘ Page {i+1}: No text, skipped")
+                        st.write(f"  ⊘ Page {i+1}: No text (OCR not available)")
                 else:
-                    st.write(f"  ✓ Page {i+1}: {len(extracted)} chars (text)")
+                    st.write(f"  ✓ Page {i+1}: {len(extracted)} chars (native text)")
                 
+                # Add extracted text
                 if extracted and len(extracted.strip()) > 10:
                     text += extracted + "\n"
         
         # Check if OCR needed but not available
-        if pages_with_no_text >= total_pages * 0.5 and not OCR_AVAILABLE:
-            st.error("❌ **PDF is image-based - OCR not installed!**")
+        if not text and not OCR_AVAILABLE:
+            st.error("❌ **PDF is image-based but OCR not installed!**")
             st.info("Install: `pip install pytesseract pillow` + tesseract-ocr")
         
         if text:
