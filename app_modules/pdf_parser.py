@@ -46,11 +46,12 @@ def extract_text_from_pdf(pdf_bytes: bytes) -> str:
                     pages_with_no_text += 1
                     
                     # Start OCR immediately if first page has no text
-                    if OCR_AVAILABLE and pages_with_no_text >= 1 and i < 25:
+                    if OCR_AVAILABLE and i < 25:
                         if pages_with_no_text == 1:
                             st.warning("⚠️ **PDF is image-based - using OCR...**")
                         
                         try:
+                            st.write(f"  🔄 OCR'ing page {i+1}...")
                             img = page.to_image(resolution=300)
                             pil_img = img.original
                             ocr_text = pytesseract.image_to_string(pil_img, lang='nor+eng')
@@ -58,8 +59,14 @@ def extract_text_from_pdf(pdf_bytes: bytes) -> str:
                             if ocr_text and len(ocr_text.strip()) > 10:
                                 extracted = ocr_text
                                 st.write(f"  ✓ Page {i+1}: {len(extracted)} chars (OCR)")
+                            else:
+                                st.write(f"  ⊘ Page {i+1}: OCR returned empty")
                         except Exception as ocr_err:
-                            st.write(f"  · Page {i+1}: OCR failed - {ocr_err}")
+                            st.write(f"  ✗ Page {i+1}: OCR failed - {ocr_err}")
+                    else:
+                        st.write(f"  ⊘ Page {i+1}: No text, skipped")
+                else:
+                    st.write(f"  ✓ Page {i+1}: {len(extracted)} chars (text)")
                 
                 if extracted and len(extracted.strip()) > 10:
                     text += extracted + "\n"
