@@ -17,6 +17,7 @@ VEHICLE_ROWS = {
     "moped": {"start": 38, "end": 46, "name": "Mopeds"},
     "tractor": {"start": 50, "end": 60, "name": "Tractors"},
     "boat": {"start": 64, "end": 72, "name": "Boats"},
+    "other": {"start": 76, "end": 84, "name": "Øvrig (Other)"},
 }
 
 VEHICLE_COLUMNS = {
@@ -126,6 +127,7 @@ def _categorize_vehicles(vehicles: list) -> dict:
         "moped": [],
         "tractor": [],
         "boat": [],
+        "other": [],
     }
     
     for v in vehicles:
@@ -140,8 +142,11 @@ def _categorize_vehicles(vehicles: list) -> dict:
             cat = "tractor"
         elif "båt" in vtype:
             cat = "boat"
-        else:
+        elif "bil" in vtype or "varebil" in vtype or "personbil" in vtype:
             cat = "car"
+        else:
+            # Unknown type goes to "other"
+            cat = "other"
         
         categorized[cat].append(v)
     
