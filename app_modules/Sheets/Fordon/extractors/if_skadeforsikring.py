@@ -23,6 +23,7 @@ import re
 def extract_if_vehicles(pdf_text: str) -> list:
     """
     Extract vehicles from If Skadeforsikring PDF.
+    FLEXIBLE pattern to handle OCR variations.
     
     Args:
         pdf_text: Full PDF text content
@@ -30,15 +31,37 @@ def extract_if_vehicles(pdf_text: str) -> list:
     Returns:
         List of vehicle dictionaries
     """
+    import streamlit as st
+    
     vehicles = []
     seen_registrations = set()
     
-    # Pattern: REG, Type, MAKE
-    # Example: "AB12345, Varebil, VOLKSWAGEN"
-    pattern = r'([A-Z]{2}\d{5}),\s*(Varebil|Personbil|Lastebil|Moped|Traktor|Båt|Tilhenger),\s*([A-Z][A-Z\s\-]+?)(?:\n|$)'
+    st.write("    🔍 **DEBUG: If pattern matching...**")
     
-    for match in re.finditer(pattern, pdf_text, re.MULTILINE):
-        reg = match.group(1).strip()
+    # FLEXIBLE Pattern: Registration, Type, Make
+    # Handles: "PR59518, Varebil, VOLKSWAGEN" or "PR59518,Varebil,VOLKSWAGEN"
+    # Also handles: "PR 59518, Varebil, VOLKSWAGEN" (space in registration)
+    pattern = r'([A-Z]{2}\s?\d{5})\s*,\s*(Varebil|Personbil|Lastebil|Moped|Traktor|Båt|Tilhenger)\s*,\s*([A-Z][A-Z\s\-]+)'
+    
+    matches = list(re.finditer(pattern, pdf_text, re.MULTILINE | re.IGNORECASE))
+    st.write(f"    - Found {len(matches)} pattern matches")
+    
+    if len(matches) == 0:
+        # Show sample of text to debug
+        sample = pdf_text[:500] if pdf_text else "No text"
+        st.write(f"    - Sample text: `{sample[:200]}...`")
+        
+        # Try to find any registration numbers
+        all_regs = re.findall(r'[A-Z]{2}\s?\d{5}', pdf_text)
+        if all_regs:
+            st.write(f"    - Found {len(all_regs)} registration numbers in PDF")
+            st.write(f"    - First few: {', '.join(all_regs[:3])}")
+        else:
+            st.write(f"    - ⚠️ No registration numbers found at all!")
+    
+    for match in matches:
+        reg_raw = match.group(1).strip()
+        reg = reg_raw.replace(" ", "")  # Remove space: "PR 59518" → "PR59518"
         
         # Skip duplicates
         if reg in seen_registrations:
@@ -58,6 +81,30 @@ def extract_if_vehicles(pdf_text: str) -> list:
         
         # Extract all fields
         year = _extract_year(section)
+        leasing = _extract_leasing(section)
+        mileage = _extract_mileage(section)
+        deductible = _extract_deductible(section)
+        bonus = _extract_bonus(pdf_text, reg)
+        motor_type = _extract_motor_type(section) if 'Båt' in vtype else ""
+        
+        # Add motor type to boats
+        if motor_type:
+            make_model += f" ({motor_type})"
+        
+        vehicles.append({
+            "registration": reg,
+            "vehicle_type": vtype,
+            "make_model_year": f"{make_model} {year}",
+            "coverage": "kasko",
+            "leasing": leasing,
+            "annual_mileage": mileage,
+            "bonus": bonus,
+            "deductible": deductible,
+        })
+        
+        st.write(f"    - Extracted: {reg} - {make} {model} {year}")
+    
+    return vehicles
         leasing = _extract_leasing(section)
         mileage = _extract_mileage(section)
         deductible = _extract_deductible(section)
@@ -196,4 +243,3 @@ def _extract_motor_type(section: str) -> str:
         return "påhengsmotor"
     
     return ""
- 
