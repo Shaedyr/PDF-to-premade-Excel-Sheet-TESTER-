@@ -15,47 +15,17 @@ from app_modules.download import download_excel_file
 def run():
     st.title("📄 PDF → Excel (BRREG + Manual Entry)")
     st.caption("Fetch company information and update Excel automatically")
-    
-    # ---------------------------------------------------------
-    # PERMANENT DEBUG SIDEBAR
-    # ---------------------------------------------------------
-    with st.sidebar:
-        st.markdown("### 🐛 Debug Panel")
-        
-        if "debug_data" in st.session_state:
-            debug = st.session_state.debug_data
-            
-            with st.expander("📦 Company Data", expanded=False):
-                st.json(debug.get("company_data", {}))
-            
-            with st.expander("💰 Financial Data", expanded=False):
-                st.json(debug.get("financial_data", {}))
-            
-            with st.expander("📄 PDF Fields", expanded=False):
-                pdf_fields = debug.get("pdf_fields", {})
-                if "pdf_text" in pdf_fields:
-                    pdf_text_len = len(pdf_fields["pdf_text"])
-                    st.write(f"✅ pdf_text exists ({pdf_text_len} chars)")
-                    other_fields = {k: v for k, v in pdf_fields.items() if k != "pdf_text"}
-                    st.json(other_fields)
-                else:
-                    st.error("❌ No pdf_text!")
-                    st.json(pdf_fields)
-            
-            with st.expander("🔀 Merged Fields", expanded=False):
-                merged = debug.get("merged_fields", {})
-                if "pdf_text" in merged:
-                    pdf_text_len = len(merged["pdf_text"])
-                    st.write(f"✅ pdf_text exists ({pdf_text_len} chars)")
-                    other_fields = {k: v for k, v in merged.items() if k != "pdf_text"}
-                    st.json(other_fields)
-                else:
-                    st.error("❌ No pdf_text in merged!")
-                    st.json(merged)
-        else:
-            st.info("No data yet. Select a company to see debug info.")
-    
     st.divider()
+
+    # =========================================================
+    # INITIALIZE SESSION STATE
+    # =========================================================
+    if "selected_company" not in st.session_state:
+        st.session_state.selected_company = None
+    if "search_results" not in st.session_state:
+        st.session_state.search_results = []
+    if "query" not in st.session_state:
+        st.session_state.query = ""
 
     # ---------------------------------------------------------
     # STEP 1: SEARCH BAR + RESULT DROPDOWN
@@ -64,36 +34,51 @@ def run():
 
     query = st.text_input(
         "Search for company",
-        placeholder="Type at least 2 characters to search"
+        placeholder="Type at least 2 characters to search",
+        key="search_input"
     )
 
-    selected_company_raw = None
-    company_options = []
-    results = []
+    # If query changed, search again
+    if query != st.session_state.query:
+        st.session_state.query = query
+        if query and len(query) >= 2:
+            results = search_brreg_live(query)
+            st.session_state.search_results = results if isinstance(results, list) else []
+        else:
+            st.session_state.search_results = []
+        # Clear selected company when searching again
+        st.session_state.selected_company = None
 
-    if query and len(query) >= 2:
-        results = search_brreg_live(query)
+    # Build company options
+    company_options = [
+        f"{c.get('navn', '')} ({c.get('organisasjonsnummer', '')})"
+        for c in st.session_state.search_results
+    ]
 
-        if not isinstance(results, list):
-            results = []
+    # Show dropdown only if we have results
+    if company_options:
+        # Find current selection index
+        current_index = None
+        if st.session_state.selected_company:
+            current_label = f"{st.session_state.selected_company.get('navn', '')} ({st.session_state.selected_company.get('organisasjonsnummer', '')})"
+            if current_label in company_options:
+                current_index = company_options.index(current_label)
+        
+        selected_label = st.selectbox(
+            "Select company",
+            company_options,
+            index=current_index,
+            placeholder="Select a company",
+            key="company_selector"
+        )
 
-        company_options = [
-            f"{c.get('navn', '')} ({c.get('organisasjonsnummer', '')})"
-            for c in results
-        ]
+        # Update selected company when dropdown changes
+        if selected_label and selected_label in company_options:
+            idx = company_options.index(selected_label)
+            st.session_state.selected_company = st.session_state.search_results[idx]
 
-    selected_label = st.selectbox(
-        "Select company",
-        company_options,
-        index=None,
-        placeholder="Select a company"
-    )
-
-    if selected_label:
-        idx = company_options.index(selected_label)
-        selected_company_raw = results[idx]
-
-    if not selected_company_raw:
+    # Check if we have a selected company
+    if not st.session_state.selected_company:
         st.info("Select a company to continue.")
         return
 
@@ -108,12 +93,12 @@ def run():
     # ---------------------------------------------------------
     # STEP 3: FETCH BRREG COMPANY DATA
     # ---------------------------------------------------------
-    org_number = selected_company_raw.get("organisasjonsnummer")
+    org_number = st.session_state.selected_company.get("organisasjonsnummer")
 
     raw_company_data = (
         fetch_company_by_org(org_number)
         if org_number
-        else selected_company_raw
+        else st.session_state.selected_company
     )
 
     company_data = format_company_data(raw_company_data)
@@ -205,14 +190,6 @@ def run():
     merged_fields.update(company_data)
     merged_fields.update(pdf_fields)
     merged_fields["company_summary"] = summary_text
-    
-    # Store debug data in session state
-    st.session_state.debug_data = {
-        "company_data": company_data,
-        "financial_data": financial_data,
-        "pdf_fields": pdf_fields,
-        "merged_fields": merged_fields,
-    }
 
     st.divider()
     st.subheader("📋 Data Preview")
