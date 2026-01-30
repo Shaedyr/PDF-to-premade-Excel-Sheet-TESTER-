@@ -4,8 +4,8 @@ IF SKADEFORSIKRING FORMAT EXTRACTOR
 
 PDF Format:
 -----------
-AB12345, Varebil, VOLKSWAGEN
-TRANSPORTER
+PR59518, Varebil, VOLKSWAGEN
+AMAROK
 Årsmodell: 2020
 Kommune: Oslo
 Kjørelengde: 16 000 km
@@ -14,7 +14,7 @@ Egenandel - Skader på eget kjøretøy: 8 000 kr
 Tredjemannsinteresse/leasing: Sparebank 1
 
 Bonus section (separate):
-AB12345: 60% bonus
+PR59518: 60% bonus
 """
 
 import re
@@ -23,7 +23,6 @@ import re
 def extract_if_vehicles(pdf_text: str) -> list:
     """
     Extract vehicles from If Skadeforsikring PDF.
-    FLEXIBLE pattern to handle OCR variations.
     
     Args:
         pdf_text: Full PDF text content
@@ -36,32 +35,37 @@ def extract_if_vehicles(pdf_text: str) -> list:
     vehicles = []
     seen_registrations = set()
     
+    # DEBUG OUTPUT
     st.write("    🔍 **DEBUG: If pattern matching...**")
     
-    # FLEXIBLE Pattern: Registration, Type, Make
-    # Handles: "PR59518, Varebil, VOLKSWAGEN" or "PR59518,Varebil,VOLKSWAGEN"
-    # Also handles: "PR 59518, Varebil, VOLKSWAGEN" (space in registration)
-    pattern = r'([A-Z]{2}\s?\d{5})\s*,\s*(Varebil|Personbil|Lastebil|Moped|Traktor|Båt|Tilhenger)\s*,\s*([A-Z][A-Z\s\-]+)'
+    # Check for key indicators
+    has_varebil = 'Varebil' in pdf_text or 'varebil' in pdf_text.lower()
+    has_personbil = 'Personbil' in pdf_text or 'personbil' in pdf_text.lower()
+    st.write(f"    - Contains 'Varebil': {has_varebil}")
+    st.write(f"    - Contains 'Personbil': {has_personbil}")
+    
+    # Look for registration numbers
+    all_regs = re.findall(r'[A-Z]{2}\d{5}', pdf_text)
+    st.write(f"    - Found {len(all_regs)} registration numbers")
+    if all_regs:
+        st.write(f"    - First 3: {', '.join(all_regs[:3])}")
+    
+    # Show sample text around first registration
+    if all_regs and len(pdf_text) > 100:
+        first_reg = all_regs[0]
+        idx = pdf_text.find(first_reg)
+        sample = pdf_text[max(0, idx-50):min(len(pdf_text), idx+200)]
+        st.write(f"    - Sample around '{first_reg}': ```{sample}```")
+    
+    # FLEXIBLE Pattern: REG, Type, MAKE
+    # Handles variations in spacing and capitalization
+    pattern = r'([A-Z]{2}\d{5})\s*,\s*(Varebil|Personbil|Lastebil|Moped|Traktor|Båt|Tilhenger)\s*,\s*([A-Z][A-Z\s\-]+)'
     
     matches = list(re.finditer(pattern, pdf_text, re.MULTILINE | re.IGNORECASE))
-    st.write(f"    - Found {len(matches)} pattern matches")
-    
-    if len(matches) == 0:
-        # Show sample of text to debug
-        sample = pdf_text[:500] if pdf_text else "No text"
-        st.write(f"    - Sample text: `{sample[:200]}...`")
-        
-        # Try to find any registration numbers
-        all_regs = re.findall(r'[A-Z]{2}\s?\d{5}', pdf_text)
-        if all_regs:
-            st.write(f"    - Found {len(all_regs)} registration numbers in PDF")
-            st.write(f"    - First few: {', '.join(all_regs[:3])}")
-        else:
-            st.write(f"    - ⚠️ No registration numbers found at all!")
+    st.write(f"    - **Pattern matched {len(matches)} times**")
     
     for match in matches:
-        reg_raw = match.group(1).strip()
-        reg = reg_raw.replace(" ", "")  # Remove space: "PR 59518" → "PR59518"
+        reg = match.group(1).strip()
         
         # Skip duplicates
         if reg in seen_registrations:
@@ -102,29 +106,7 @@ def extract_if_vehicles(pdf_text: str) -> list:
             "deductible": deductible,
         })
         
-        st.write(f"    - Extracted: {reg} - {make} {model} {year}")
-    
-    return vehicles
-        leasing = _extract_leasing(section)
-        mileage = _extract_mileage(section)
-        deductible = _extract_deductible(section)
-        bonus = _extract_bonus(pdf_text, reg)
-        motor_type = _extract_motor_type(section) if 'Båt' in vtype else ""
-        
-        # Add motor type to boats
-        if motor_type:
-            make_model += f" ({motor_type})"
-        
-        vehicles.append({
-            "registration": reg,
-            "vehicle_type": vtype,
-            "make_model_year": f"{make_model} {year}",
-            "coverage": "kasko",
-            "leasing": leasing,
-            "annual_mileage": mileage,
-            "bonus": bonus,
-            "deductible": deductible,
-        })
+        st.write(f"    - ✓ Extracted: {reg} - {make} {model} {year}")
     
     return vehicles
 
@@ -224,7 +206,7 @@ def _extract_deductible(section: str) -> str:
 def _extract_bonus(full_text: str, reg: str) -> str:
     """
     Extract bonus percentage.
-    Searches entire document for: "AB12345: 60% bonus"
+    Searches entire document for: "PR59518: 60% bonus"
     """
     bonus_match = re.search(rf'{reg}:\s*(\d+)%\s*bonus', full_text, re.I)
     if bonus_match:
